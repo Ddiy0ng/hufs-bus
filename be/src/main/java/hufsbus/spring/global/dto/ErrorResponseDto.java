@@ -1,4 +1,4 @@
-package com.swai.hufsbus.global.dto;
+package hufsbus.spring.global.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

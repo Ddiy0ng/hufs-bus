@@ -1,4 +1,4 @@
-package com.swai.hufsbus.global.entity;
+package hufsbus.spring.global.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;

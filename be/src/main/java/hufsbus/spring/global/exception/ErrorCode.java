@@ -1,4 +1,4 @@
-package com.swai.hufsbus.global.exception;
+package hufsbus.spring.global.exception;
 
 import lombok.Getter;
 import org.springframework.http.HttpStatus;

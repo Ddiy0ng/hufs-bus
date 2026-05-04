@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: be
+
+  datasource:
+    url: jdbc:mysql://localhost:${DB_PORT}/hufs_bus?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    properties:
+      hibernate:
+        show_sql: true
+        format_sql: true
+
+jwt:
+  token:
+    secretKey: ${JWT_SECRETKEY}

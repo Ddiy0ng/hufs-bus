@@ -1,6 +1,6 @@
-package com.swai.hufsbus.global.exception;
+package hufsbus.spring.global.exception;
 
-import com.swai.hufsbus.global.dto.ApiResponseDto;
+import hufsbus.spring.global.dto.ApiResponseDto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;

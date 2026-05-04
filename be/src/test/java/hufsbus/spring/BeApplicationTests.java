@@ -1,10 +1,10 @@
-package com.swai.hufsbus;
+package hufsbus.spring;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
-class HufsbusApplicationTests {
+class BeApplicationTests {
 
 	@Test
 	void contextLoads() {
