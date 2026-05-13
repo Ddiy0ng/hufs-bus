@@ -9,9 +9,20 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
-public interface BusRouteRepository extends JpaRepository<BusRoute,Integer> {
+public interface BusRouteRepository extends JpaRepository<BusRoute,Long> {
 
-    List<BusRoute> findByInOutCampusAndBusWayAndStartStop(InOutCampusEnum inOutCampusEnum, BusWayEnum busWay, BusStopEnum startStop);
+    List<BusRoute> findByInOutCampusOrderByIdAsc(InOutCampusEnum inOutCampus);
+
+    Optional<BusRoute> findFirstByInOutCampusOrderByIdAsc(
+            InOutCampusEnum inOutCampus
+    );
+
+    List<BusRoute> findByInOutCampusAndBusWayAndStartStop(
+            InOutCampusEnum inOutCampus,
+            BusWayEnum busWay,
+            BusStopEnum startStop
+    );
 }
