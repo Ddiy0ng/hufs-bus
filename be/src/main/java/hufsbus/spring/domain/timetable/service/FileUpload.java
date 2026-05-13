@@ -3,6 +3,7 @@ package hufsbus.spring.domain.timetable.service;
 import hufsbus.spring.domain.timetable.dto.ExcelRequestDto;
 import hufsbus.spring.domain.timetable.timetableEnum.BusStopEnum;
 import hufsbus.spring.domain.timetable.timetableEnum.BusWayEnum;
+import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
 import org.apache.poi.ss.usermodel.*;
@@ -29,12 +30,14 @@ public class FileUpload {
                 }
 
                 String departAt = getCellValue(row, 0);
-                String busWay = getCellValue(row, 1);
-                String startStop = getCellValue(row, 2);
-                String route = getCellValue(row, 3);
+                String inOutCampus = getCellValue(row, 1);
+                String busWay = getCellValue(row, 2);
+                String startStop = getCellValue(row, 3);
+                String route = getCellValue(row, 4);
 
                 ExcelRequestDto dto = ExcelRequestDto.builder()
                         .departAt(LocalTime.parse(departAt))
+                        .inOutCampus(InOutCampusEnum.from(inOutCampus))
                         .busWay(BusWayEnum.from(busWay))
                         .startStop(BusStopEnum.from(startStop))
                         .route(route)
@@ -51,8 +54,8 @@ public class FileUpload {
     }
 
     private static boolean isBlankRow(Row row) {
-        for (int i = 0; i <= 3; i++) {
-            Cell cell = row.getCell(i, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+        for (int i = 0; i <= 4; i++) {
+            Cell cell = row.getCell(i);
 
             if (cell != null && !cell.toString().trim().isEmpty()) {
                 return false;
@@ -63,7 +66,7 @@ public class FileUpload {
     }
 
     private static String getCellValue(Row row, int index) {
-        Cell cell = row.getCell(index, Row.MissingCellPolicy.RETURN_BLANK_AS_NULL);
+        Cell cell = row.getCell(index);
 
         if (cell == null) {
             throw new CustomException(ErrorCode.EXCEL_PARSING_EXCEPTION);

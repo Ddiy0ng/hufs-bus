@@ -9,6 +9,7 @@ import hufsbus.spring.domain.timetable.repository.BusStopRepository;
 import hufsbus.spring.domain.timetable.repository.TimetableRepository;
 import hufsbus.spring.domain.timetable.timetableEnum.BusStopEnum;
 import hufsbus.spring.domain.timetable.timetableEnum.BusWayEnum;
+import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
 import jakarta.transaction.Transactional;
@@ -48,6 +49,7 @@ public class BusScheduleService {
     private void saveTimetable(ExcelRequestDto excelRequestDto) {
 
         LocalTime departAt = excelRequestDto.getDepartAt();
+        InOutCampusEnum inOutCampus = excelRequestDto.getInOutCampus();
         BusWayEnum busWay = excelRequestDto.getBusWay();
         BusStopEnum startStop = excelRequestDto.getStartStop();
         List<BusStopEnum> route = parseRoute(excelRequestDto.getRoute());
@@ -56,7 +58,7 @@ public class BusScheduleService {
         if (route.isEmpty())
             throw new CustomException(ErrorCode.PARSED_ROUTE_EMPTY_EXCEPTION);
 
-        List<BusRoute> alreadyExistBusRoutes = busRouteRepository.findByBusWayAndStartStop(busWay, startStop);
+        List<BusRoute> alreadyExistBusRoutes = busRouteRepository.findByInOutCampusAndBusWayAndStartStop(inOutCampus, busWay, startStop);
 
         for (BusRoute value : alreadyExistBusRoutes) {
             boolean isExistRoute = true;
@@ -82,7 +84,7 @@ public class BusScheduleService {
         }
 
         if (busRoute == null) {
-            busRoute = BusRoute.of(busWay, startStop);
+            busRoute = BusRoute.of(inOutCampus, busWay, startStop);
             busRouteRepository.save(busRoute);
 
             saveBusStop(route, busRoute);
