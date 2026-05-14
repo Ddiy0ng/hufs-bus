@@ -18,7 +18,6 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalTime;
@@ -134,7 +133,9 @@ public class BusScheduleService {
         InOutCampusEnum inOutCampus = getDefaultOrSearchedInOutCampusValue(inOutCampusValue);
 
         List<BusRoute> busRouteList = busRouteRepository.findByInOutCampusOrderByIdAsc(inOutCampus);
+
         List<BusRouteResponseDto> busRouteResponseDtoList = new ArrayList<>();
+
         for (BusRoute value : busRouteList) {
             List<BusStop> busStopList = busStopRepository.findByBusRouteOrderByStopOrderAsc(value);
             busRouteResponseDtoList.add(BusRouteResponseDto.of(value, busStopList));
@@ -147,15 +148,20 @@ public class BusScheduleService {
     public List<TimetableResponseDto> searchTimetables(String inOutCampusValue, Long routeIdValue, Integer startTimeValue) {
 
         InOutCampusEnum inOutCampus = getDefaultOrSearchedInOutCampusValue(inOutCampusValue);
-        Long routeId = getDefaultOrRouteIdValue(inOutCampus, routeIdValue);
-        Integer startTime = getDefaultOrStartTimeValue(inOutCampus, startTimeValue);
 
-        LocalTime startAt = LocalTime.of(startTime, 0);
-        LocalTime endAt = startAt.plusHours(1);
+        LocalTime startAt = null;
+        LocalTime endAt = null;
 
-        List<Timetable> timetableList = timetableRepository.findByRouteIdAndTimes(routeId, startAt, endAt);
+        if  (startTimeValue != null) {
+
+            startAt = LocalTime.of(startTimeValue, 0);
+            endAt = startAt.plusHours(1);
+        }
+
+        List<Timetable> timetableList = timetableRepository.searchTimetables(inOutCampus, routeIdValue, startAt, endAt);
 
         List<TimetableResponseDto> timetableResponseDtoList = new ArrayList<>();
+
         for (Timetable value : timetableList) {
             List<BusStop> busStopList = busStopRepository.findByBusRouteOrderByStopOrderAsc(value.getBusRoute());
             timetableResponseDtoList.add(TimetableResponseDto.of(value, busStopList));
@@ -164,46 +170,11 @@ public class BusScheduleService {
         return timetableResponseDtoList;
     }
 
-    // 조건 없으면 default로 7
-    private Integer getDefaultOrStartTimeValue(InOutCampusEnum inOutCampus, Integer startTimeValue) {
-
-        if (startTimeValue == null) {
-            if (inOutCampus == InOutCampusEnum.IN_CAMPUS)
-                return 8;
-            return 7;
-        }
-
-        return startTimeValue;
-    }
-
-    // 조건 없으면 default로 0번 노선
-    private Long getDefaultOrRouteIdValue(InOutCampusEnum inOutCampus, Long routeIdValue) {
-
-        if (routeIdValue == null) {
-            BusRoute defaultBusRoute = busRouteRepository
-                    .findFirstByInOutCampusOrderByIdAsc(inOutCampus)
-                    .orElseThrow(() -> new CustomException(ErrorCode.NO_ROUTES_EXISTS_EXCEPTION));
-
-            return defaultBusRoute.getId();
-        }
-
-        return routeIdValue;
-    }
-
     // 조건 없으면 default로 교내
     private InOutCampusEnum getDefaultOrSearchedInOutCampusValue(String inOutCampus) {
         if (inOutCampus == null || inOutCampus.trim().isEmpty())
             return InOutCampusEnum.IN_CAMPUS;
 
         return InOutCampusEnum.from(inOutCampus);
-    }
-
-    // 조건 없으면 default로
-    private BusWayEnum getDefaultOrBusWayValue(String busWayValue) {
-        if (busWayValue == null || busWayValue.trim().isEmpty()) {
-            return BusWayEnum.UP_BOUND_LINE;
-        }
-
-        return BusWayEnum.from(busWayValue);
     }
 }

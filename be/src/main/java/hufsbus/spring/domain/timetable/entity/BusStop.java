@@ -2,8 +2,6 @@ package hufsbus.spring.domain.timetable.entity;
 
 import hufsbus.spring.domain.timetable.timetableEnum.BusStopEnum;
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
