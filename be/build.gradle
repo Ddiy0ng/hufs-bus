@@ -24,6 +24,8 @@ dependencies {
 //    implementation 'org.springframework.boot:spring-boot-starter-security' // security filter chain on springboot application
     implementation 'org.springframework.boot:spring-boot-starter-validation' // dto validation check
     implementation 'org.springframework.boot:spring-boot-starter-web' // default dependency - json convert jackson, inner tomcat, spring mvc, restcontroller, httpmethod mapper
+    implementation 'org.springframework.boot:spring-boot-starter-webflux' // WebClient (KakaoRouteService)
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
     compileOnly 'org.projectlombok:lombok' // lombok annotation
     annotationProcessor 'org.projectlombok:lombok'
     developmentOnly 'org.springframework.boot:spring-boot-devtools'
@@ -35,6 +37,10 @@ dependencies {
     implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5' // JSON 파싱을 위해 필요
+
+    // test
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 tasks.named('test') {

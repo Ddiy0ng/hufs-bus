@@ -10,7 +10,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create
+      ddl-auto: update
     properties:
       hibernate:
         show_sql: true
@@ -19,3 +19,7 @@ spring:
 jwt:
   token:
     secretKey: ${JWT_SECRETKEY}
+
+kakao:
+  api:
+    key: ${KAKAO_API_KEY}
