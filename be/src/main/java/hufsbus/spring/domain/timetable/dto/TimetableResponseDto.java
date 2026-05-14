@@ -36,7 +36,7 @@ public class TimetableResponseDto {
         timetableResponseDto.routeId = busRoute.getId();
         timetableResponseDto.inOutCampus = busRoute.getInOutCampus().getInOutCampus();
         timetableResponseDto.startStop = busRoute.getStartStop().getBusStopName();
-        timetableResponseDto.endStop = busRoute.getStartStop().getBusStopName();
+        timetableResponseDto.endStop = route.get(route.size() - 1);
         timetableResponseDto.departAt = timetable.getDepartAt().format(DateTimeFormatter.ofPattern("HH:mm"));
         timetableResponseDto.routeList = route;
 
