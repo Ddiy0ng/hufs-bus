@@ -9,16 +9,19 @@ public enum ErrorCode {
     //500
     INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "서버 내부 오류입니다."),
 
-    // 404 NOT_FOUND
-    // 404 NOT_FOUND: 예시입니다~
-    // ,를 통해서 상수를 추가하세요~
-    EXAMPLE_NOT_FOUND_ERROR(HttpStatus.NOT_FOUND, "404 NOT_FOUND 예시입니다~"),
-    EXAMPLE_BAD_REQUEST_ERROR(HttpStatus.BAD_REQUEST, "400 BAD_REQUEST 예시입니다~"),
     TIMETABLE_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 시간표를 찾을 수 없습니다."),
     BUS_NOT_FOUND(HttpStatus.NOT_FOUND, "해당 버스를 찾을 수 없습니다."),
     LOCATION_NOT_FOUND(HttpStatus.NOT_FOUND, "위치 정보를 찾을 수 없습니다."),
     SEAT_UNAVAILABLE(HttpStatus.BAD_REQUEST, "여석이 없습니다."),
-    NO_PASSENGER(HttpStatus.BAD_REQUEST, "버스에 탑승한 승객이 없습니다.");
+    NO_PASSENGER(HttpStatus.BAD_REQUEST, "버스에 탑승한 승객이 없습니다."),
+    EXCEL_PARSING_EXCEPTION(HttpStatus.BAD_REQUEST, "엑셀 파일 등록 중 오류입니다."),
+    NO_UP_DOWN_ENUM(HttpStatus.BAD_REQUEST, "상하행에 대한 값이어야 합니다."),
+    NO_IN_OUT_ENUM(HttpStatus.BAD_REQUEST, "교내외에 대한 값이어야 합니다."),
+    NO_BUS_STOP_ENUM(HttpStatus.BAD_REQUEST, "정확한 버스 정류장 이름이어야 합니다."),
+    ROUTE_PARSING_EXCEPTION(HttpStatus.BAD_REQUEST, "경로 파싱 중 에러가 발생했습니다."),
+    PARSED_ROUTE_EMPTY_EXCEPTION(HttpStatus.BAD_REQUEST, "파싱한 경로값이 EMPTY 상태입니다."),
+    CREATE_TIMETABLE_EXCEPTION(HttpStatus.BAD_REQUEST, "시간표 생성 중 에러가 발생했습니다."),
+    NO_ROUTES_EXISTS_EXCEPTION(HttpStatus.BAD_REQUEST, "노선이 존재하지 않습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;
