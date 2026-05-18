@@ -1,6 +1,6 @@
 package com.hufsteam.shuttletrack.ui.auth
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -8,14 +8,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,108 +21,117 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hufsteam.shuttletrack.ui.common.BusIcon
+import com.hufsteam.shuttletrack.ui.common.LanguageButton
+import com.hufsteam.shuttletrack.ui.common.ShuttleButton
+import com.hufsteam.shuttletrack.ui.theme.NavyBlue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 
-/**
- * 로그인 화면
- *
- * [필드]
- * - 이메일
- * - 비밀번호
- *
- * [버튼]
- * - 로그인   → Firebase Auth 인증 후 역할별 화면으로 이동
- * - 회원가입 → SignUpScreen으로 이동
- */
 @Composable
 fun LoginScreen(
     viewModel: AuthViewModel,
     onLoginSuccess: () -> Unit,
     onGoSignUp: () -> Unit
 ) {
-    var email    by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var email        by remember { mutableStateOf("") }
+    var password     by remember { mutableStateOf("") }
+    var pwVisible    by remember { mutableStateOf(false) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    val isEnabled = email.isNotBlank() && password.isNotBlank()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .statusBarsPadding()
+    ) {
+        // 우측 상단 언어 버튼
+        LanguageButton(modifier = Modifier
+            .align(Alignment.TopEnd)
+            .padding(top = 16.dp, end = 16.dp))
+
         Column(
             modifier            = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 32.dp),
-            verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 앱 제목
-            Text(
-                text       = "외대 셔틀",
-                fontSize   = 28.sp,
-                fontWeight = FontWeight.Bold,
-                color      = MaterialTheme.colorScheme.primary
-            )
-            Text(
-                text     = "실시간 위치 안내 서비스",
-                fontSize = 14.sp,
-                color    = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(Modifier.height(80.dp))
+            BusIcon()
+            Spacer(Modifier.height(12.dp))
+            Text("로그인", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Spacer(Modifier.height(32.dp))
 
             // 이메일 입력
             OutlinedTextField(
-                value         = email,
-                onValueChange = { email = it },
-                label         = { Text("이메일") },
-                placeholder   = { Text("example@hufs.ac.kr") },
-                singleLine    = true,
+                value           = email,
+                onValueChange   = { email = it; viewModel.clearErrors() },
+                placeholder     = { Text("아이디를 입력해 주세요", color = Color(0xFFBBBBBB)) },
+                singleLine      = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier      = Modifier.fillMaxWidth()
+                shape           = RoundedCornerShape(10.dp),
+                colors          = fieldColors(),
+                modifier        = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
 
             // 비밀번호 입력
             OutlinedTextField(
-                value                  = password,
-                onValueChange          = { password = it },
-                label                  = { Text("비밀번호") },
-                singleLine             = true,
-                visualTransformation   = PasswordVisualTransformation(),
-                keyboardOptions        = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier               = Modifier.fillMaxWidth()
+                value                = password,
+                onValueChange        = { password = it; viewModel.clearErrors() },
+                placeholder          = { Text("비밀번호를 입력해 주세요", color = Color(0xFFBBBBBB)) },
+                singleLine           = true,
+                visualTransformation = if (pwVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon         = {
+                    IconButton(onClick = { pwVisible = !pwVisible }) {
+                        Icon(
+                            imageVector = if (pwVisible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                            contentDescription = if (pwVisible) "비밀번호 숨기기" else "비밀번호 보기",
+                            tint = Color(0xFFBBBBBB)
+                        )
+                    }
+                },
+                shape   = RoundedCornerShape(10.dp),
+                colors  = fieldColors(),
+                modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(24.dp))
+
+            // 오류 메시지
+            viewModel.errorMessage?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = Color(0xFFE53935), fontSize = 13.sp)
+            }
+
+            Spacer(Modifier.weight(1f))
 
             // 로그인 버튼
-            Button(
-                onClick  = { viewModel.login(email, password, onLoginSuccess) },
-                enabled  = !viewModel.isLoading,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp)
-            ) {
-                if (viewModel.isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Text("로그인", fontSize = 16.sp)
-                }
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 회원가입 이동
-            TextButton(onClick = onGoSignUp) {
-                Text("계정이 없으신가요? 회원가입")
-            }
-
-            // 오류 메시지 표시
-            viewModel.errorMessage?.let { msg ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text  = msg,
-                    color = MaterialTheme.colorScheme.error,
-                    fontSize = 13.sp
-                )
-            }
+            ShuttleButton(
+                text    = "로그인",
+                enabled = isEnabled,
+                onClick = { viewModel.login(email, password, onLoginSuccess) }
+            )
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
+
+@Composable
+fun fieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor   = NavyBlue,
+    unfocusedBorderColor = Color(0xFFDDDDDD),
+    errorBorderColor     = Color(0xFFE53935),
+    focusedContainerColor   = Color.White,
+    unfocusedContainerColor = Color.White
+)

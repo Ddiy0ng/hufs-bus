@@ -12,100 +12,122 @@ import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.auth.LoginScreen
 import com.hufsteam.shuttletrack.ui.auth.SignUpScreen
 import com.hufsteam.shuttletrack.ui.driver.DriverMainScreen
+import com.hufsteam.shuttletrack.ui.driver.DriverOperationScreen
+import com.hufsteam.shuttletrack.ui.driver.DriverViewModel
+import com.hufsteam.shuttletrack.ui.home.HomeScreen
 import com.hufsteam.shuttletrack.ui.splash.SplashScreen
 import com.hufsteam.shuttletrack.ui.student.StudentMainScreen
+import com.hufsteam.shuttletrack.ui.terms.TermsScreen
+import com.hufsteam.shuttletrack.ui.terms.TermsType
+import com.hufsteam.shuttletrack.ui.timetable.TimetableScreen
 
-/**
- * 앱 전체 Navigation 그래프
- *
- * 역할(role) 에 따른 분기:
- *   STUDENT → StudentMainScreen
- *   DRIVER  → DriverMainScreen
- *   ADMIN   → AdminMainScreen
- */
 @Composable
 fun AppNavGraph(
-    viewModel: AuthViewModel = viewModel()
+    authViewModel: AuthViewModel = viewModel(),
+    driverViewModel: DriverViewModel = viewModel()
 ) {
     val navController = rememberNavController()
 
-    NavHost(
-        navController    = navController,
-        startDestination = Screen.Splash.route
-    ) {
-        // ── 스플래시 (자동 로그인 체크) ──────────────────────────
+    NavHost(navController = navController, startDestination = Screen.Splash.route) {
+
         composable(Screen.Splash.route) {
-            SplashScreen(
-                viewModel  = viewModel,
-                onNavigate = { loggedIn ->
-                    if (loggedIn) {
-                        navigateByRole(navController, viewModel.userRole)
-                    } else {
-                        navController.navigate(Screen.Login.route) {
-                            popUpTo(Screen.Splash.route) { inclusive = true }
-                        }
-                    }
+            SplashScreen(viewModel = authViewModel, onNavigate = { loggedIn ->
+                if (loggedIn) navigateByRole(navController, authViewModel.userRole)
+                else navController.navigate(Screen.Home.route) {
+                    popUpTo(Screen.Splash.route) { inclusive = true }
                 }
+            })
+        }
+
+        composable(Screen.Home.route) {
+            HomeScreen(
+                onGoLogin  = { navController.navigate(Screen.Login.route) },
+                onGoSignUp = { navController.navigate(Screen.SignUp.route) }
             )
         }
 
-        // ── 로그인 ───────────────────────────────────────────────
         composable(Screen.Login.route) {
             LoginScreen(
-                viewModel      = viewModel,
-                onLoginSuccess = { navigateByRole(navController, viewModel.userRole) },
+                viewModel      = authViewModel,
+                onLoginSuccess = { navigateByRole(navController, authViewModel.userRole) },
                 onGoSignUp     = { navController.navigate(Screen.SignUp.route) }
             )
         }
 
-        // ── 회원가입 ─────────────────────────────────────────────
         composable(Screen.SignUp.route) {
             SignUpScreen(
-                viewModel        = viewModel,
-                onSignUpSuccess  = { navigateByRole(navController, viewModel.userRole) },
-                onGoLogin        = { navController.popBackStack() }
+                viewModel        = authViewModel,
+                onGoLogin        = {
+                    navController.navigate(Screen.Login.route) {
+                        popUpTo(Screen.Home.route)
+                    }
+                },
+                onGoServiceTerms = { navController.navigate(Screen.ServiceTerms.route) },
+                onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) }
             )
         }
 
-        // ── 학생 메인 ────────────────────────────────────────────
         composable(Screen.StudentMain.route) {
             StudentMainScreen(
-                onLogout = { logout(navController, viewModel) }
+                viewModel = authViewModel,
+                onLogout  = { doLogout(navController, authViewModel) }
             )
         }
 
-        // ── 기사 메인 ────────────────────────────────────────────
         composable(Screen.DriverMain.route) {
             DriverMainScreen(
-                onLogout = { logout(navController, viewModel) }
+                viewModel       = authViewModel,
+                driverViewModel = driverViewModel,
+                onLogout        = { doLogout(navController, authViewModel) },
+                onGoTimetable   = { navController.navigate(Screen.Timetable.createRoute("driver")) },
+                onGoOperation   = { navController.navigate(Screen.DriverOperation.route) }
             )
         }
 
-        // ── 관리자 메인 ──────────────────────────────────────────
+        composable(Screen.DriverOperation.route) {
+            DriverOperationScreen(
+                driverViewModel = driverViewModel,
+                onBack          = { navController.popBackStack() }
+            )
+        }
+
         composable(Screen.AdminMain.route) {
             AdminMainScreen(
-                onLogout = { logout(navController, viewModel) }
+                viewModel     = authViewModel,
+                onLogout      = { doLogout(navController, authViewModel) },
+                onGoTimetable = { navController.navigate(Screen.Timetable.createRoute("admin")) }
+            )
+        }
+
+        composable(Screen.ServiceTerms.route) {
+            TermsScreen(type = TermsType.SERVICE, onBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.PrivacyTerms.route) {
+            TermsScreen(type = TermsType.PRIVACY, onBack = { navController.popBackStack() })
+        }
+
+        composable(Screen.Timetable.route) { backStackEntry ->
+            val role = backStackEntry.arguments?.getString("role") ?: "driver"
+            TimetableScreen(
+                role          = role,
+                onGoMyPage    = { navController.popBackStack() },
+                onGoFavorites = {}
             )
         }
     }
 }
 
-/** 역할에 따라 메인 화면으로 이동 (백스택 전부 제거) */
 private fun navigateByRole(navController: NavController, role: UserRole?) {
     val route = when (role) {
         UserRole.DRIVER -> Screen.DriverMain.route
         UserRole.ADMIN  -> Screen.AdminMain.route
         else            -> Screen.StudentMain.route
     }
-    navController.navigate(route) {
-        popUpTo(0) { inclusive = true }
-    }
+    navController.navigate(route) { popUpTo(0) { inclusive = true } }
 }
 
-/** 로그아웃 후 로그인 화면으로 이동 */
-private fun logout(navController: NavController, viewModel: AuthViewModel) {
+private fun doLogout(navController: NavController, viewModel: AuthViewModel) {
     viewModel.logout()
-    navController.navigate(Screen.Login.route) {
-        popUpTo(0) { inclusive = true }
-    }
+    navController.navigate(Screen.Home.route) { popUpTo(0) { inclusive = true } }
 }

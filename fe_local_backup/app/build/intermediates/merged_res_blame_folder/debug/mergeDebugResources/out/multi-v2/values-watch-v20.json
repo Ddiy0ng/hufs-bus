@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.hufsteam.shuttletrack.app-mergeDebugResources-63:/values-watch-v20/values-watch-v20.xml",
+            "outputFile": "com.hufsteam.shuttletrack.app-mergeDebugResources-64:/values-watch-v20/values-watch-v20.xml",
             "map": [
                 {
                     "source": "/Users/kimsunhwa/.gradle/caches/9.0.0/transforms/b7f4d260ce55699fe58a73f06b46f72b/transformed/play-services-auth-20.7.0/res/values-watch-v20/values.xml",

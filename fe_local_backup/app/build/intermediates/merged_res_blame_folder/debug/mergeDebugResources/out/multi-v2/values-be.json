@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.hufsteam.shuttletrack.app-mergeDebugResources-63:/values-be/values-be.xml",
+            "outputFile": "com.hufsteam.shuttletrack.app-mergeDebugResources-64:/values-be/values-be.xml",
             "map": [
                 {
                     "source": "/Users/kimsunhwa/.gradle/caches/9.0.0/transforms/63d4dcb3436b69e8dedc1098034e78c6/transformed/play-services-base-18.0.1/res/values-be/values.xml",

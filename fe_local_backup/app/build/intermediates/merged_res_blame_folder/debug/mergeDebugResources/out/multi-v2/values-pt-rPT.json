@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "com.hufsteam.shuttletrack.app-mergeDebugResources-63:/values-pt-rPT/values-pt-rPT.xml",
+            "outputFile": "com.hufsteam.shuttletrack.app-mergeDebugResources-64:/values-pt-rPT/values-pt-rPT.xml",
             "map": [
                 {
                     "source": "/Users/kimsunhwa/.gradle/caches/9.0.0/transforms/96e8ba04700601e951441e2e35c697e5/transformed/ui-release/res/values-pt-rPT/values-pt-rPT.xml",
