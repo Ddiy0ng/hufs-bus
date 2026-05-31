@@ -1,44 +1,122 @@
 package com.example.hufs_bus
 
+import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DirectionsBus
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.hufs_bus.data.*
+import com.example.hufs_bus.data.BusLocationInfo
+import com.example.hufs_bus.data.BusRoute
+import com.example.hufs_bus.data.BusSchedule
+import com.example.hufs_bus.data.BusStatus
+import com.example.hufs_bus.data.BusStop
+import com.example.hufs_bus.data.FavoriteBus
+import com.example.hufs_bus.data.NotificationDay
+import com.example.hufs_bus.data.RouteType
 import com.example.hufs_bus.ui.theme.Hufs_busTheme
+import kotlinx.coroutines.delay
 
-private val NavyDark = Color(0xFF102A56)
+private val NavyDark = Color(0xFF073763)
+private val NavyMuted = Color(0xFF244F78)
 private val RedAccent = Color(0xFFE0462E)
 private val OrangeAccent = Color(0xFFFB8C00)
-private val GrayText = Color(0xFF9E9E9E)
+private val GrayText = Color(0xFF8A94A3)
 private val GrayLine = Color(0xFFD8DEE8)
 private val BgLight = Color(0xFFF6F7F9)
+private val FieldBg = Color(0xFFF0F3F6)
+private const val SHUTTLE_NOTIFICATION_CHANNEL_ID = "hufs_shuttle_bus_alerts"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,16 +131,39 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class BottomTab { TIMETABLE, FAVORITE, MYPAGE }
-enum class AppScreen { TIMETABLE, NAVIGATOR, FAVORITE, MYPAGE }
+enum class AppScreen { LANDING, LOGIN, SIGN_UP, TIMETABLE, NAVIGATOR, FAVORITE, MYPAGE }
 
 @Composable
 fun PassengerApp(vm: BusViewModel = viewModel()) {
-    var currentScreen by remember { mutableStateOf(AppScreen.TIMETABLE) }
+    val context = LocalContext.current
+    var currentScreen by remember { mutableStateOf(AppScreen.LANDING) }
     var selectedTab by remember { mutableStateOf(BottomTab.TIMETABLE) }
+    val showBottomBar = currentScreen in setOf(AppScreen.TIMETABLE, AppScreen.FAVORITE, AppScreen.MYPAGE)
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = {}
+    )
+
+    LaunchedEffect(Unit) {
+        createShuttleNotificationChannel(context)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(vm.lastNotificationMessage) {
+        vm.lastNotificationMessage?.let {
+            showShuttleNotification(context, it)
+            delay(3200)
+            vm.clearNotificationMessage()
+        }
+    }
 
     Scaffold(
         bottomBar = {
-            if (currentScreen != AppScreen.NAVIGATOR) {
+            if (showBottomBar) {
                 PassengerBottomBar(
                     selectedTab = selectedTab,
                     onTabClick = { tab ->
@@ -84,6 +185,31 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
                 .background(BgLight)
         ) {
             when (currentScreen) {
+                AppScreen.LANDING -> LandingScreen(
+                    onLoginClick = { currentScreen = AppScreen.LOGIN },
+                    onSignUpClick = { currentScreen = AppScreen.SIGN_UP }
+                )
+
+                AppScreen.LOGIN -> LoginScreen(
+                    vm = vm,
+                    onBackClick = { currentScreen = AppScreen.LANDING },
+                    onSignUpClick = { currentScreen = AppScreen.SIGN_UP },
+                    onSuccess = {
+                        selectedTab = BottomTab.TIMETABLE
+                        currentScreen = AppScreen.TIMETABLE
+                    }
+                )
+
+                AppScreen.SIGN_UP -> SignUpScreen(
+                    vm = vm,
+                    onBackClick = { currentScreen = AppScreen.LANDING },
+                    onLoginClick = { currentScreen = AppScreen.LOGIN },
+                    onSuccess = {
+                        selectedTab = BottomTab.TIMETABLE
+                        currentScreen = AppScreen.TIMETABLE
+                    }
+                )
+
                 AppScreen.TIMETABLE -> TimetableScreen(
                     vm = vm,
                     onScheduleClick = { schedule ->
@@ -102,24 +228,178 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
                         vm = vm,
                         onBackClick = {
                             vm.stopAutoRefresh()
-                            currentScreen = AppScreen.TIMETABLE
                             selectedTab = BottomTab.TIMETABLE
+                            currentScreen = AppScreen.TIMETABLE
                         }
                     )
                 }
 
                 AppScreen.FAVORITE -> FavoriteScreen(
                     favorites = vm.favoriteBuses,
-                    onRemoveClick = { favorite: FavoriteBus ->
-                        vm.removeFavorite(favorite.busId, favorite.routeId)
-                    }
+                    onRemoveClick = { favorite -> vm.removeFavorite(favorite.busId, favorite.routeId) }
                 )
 
-                AppScreen.MYPAGE -> PlaceholderScreen(
-                    title = "마이페이지",
-                    message = "마이페이지 화면은 추후 구현 예정입니다."
+                AppScreen.MYPAGE -> MyPageScreen(
+                    vm = vm,
+                    onSignOutClick = {
+                        vm.signOut()
+                        selectedTab = BottomTab.TIMETABLE
+                        currentScreen = AppScreen.LANDING
+                    }
                 )
             }
+
+            vm.lastNotificationMessage?.let {
+                AppNotificationBanner(
+                    message = it,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(horizontal = 18.dp, vertical = 12.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LandingScreen(
+    onLoginClick: () -> Unit,
+    onSignUpClick: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .padding(horizontal = 28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.weight(1f))
+
+        BusLogo(size = 74)
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        PrimaryButton(text = "회원가입", onClick = onSignUpClick)
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        PrimaryButton(text = "로그인", onClick = onLoginClick)
+
+        Spacer(modifier = Modifier.height(52.dp))
+    }
+}
+
+@Composable
+private fun LoginScreen(
+    vm: BusViewModel,
+    onBackClick: () -> Unit,
+    onSignUpClick: () -> Unit,
+    onSuccess: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AuthFrame(
+        title = "로그인",
+        onBackClick = onBackClick,
+        bottomText = "회원가입",
+        onBottomClick = onSignUpClick
+    ) {
+        AuthTextField(value = email, onValueChange = { email = it }, placeholder = "이메일을 입력해 주세요", icon = Icons.Default.Email)
+        Spacer(modifier = Modifier.height(10.dp))
+        AuthTextField(
+            value = password,
+            onValueChange = { password = it },
+            placeholder = "비밀번호를 입력해 주세요",
+            icon = Icons.Default.Lock,
+            isPassword = true
+        )
+        AuthError(error)
+        PrimaryButton(
+            text = "로그인",
+            onClick = {
+                if (vm.signIn(email, password)) onSuccess() else error = "이메일과 비밀번호를 확인해 주세요."
+            },
+            enabled = email.isNotBlank() && password.isNotBlank()
+        )
+    }
+}
+
+@Composable
+private fun SignUpScreen(
+    vm: BusViewModel,
+    onBackClick: () -> Unit,
+    onLoginClick: () -> Unit,
+    onSuccess: () -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AuthFrame(
+        title = "회원가입",
+        onBackClick = onBackClick,
+        bottomText = "로그인",
+        onBottomClick = onLoginClick
+    ) {
+        AuthTextField(value = email, onValueChange = { email = it }, placeholder = "이메일을 입력해 주세요", icon = Icons.Default.Email)
+        Spacer(modifier = Modifier.height(10.dp))
+        AuthTextField(value = password, onValueChange = { password = it }, placeholder = "비밀번호를 입력해 주세요", icon = Icons.Default.Lock, isPassword = true)
+        Spacer(modifier = Modifier.height(10.dp))
+        AuthTextField(value = confirm, onValueChange = { confirm = it }, placeholder = "비밀번호를 다시 입력해 주세요", icon = Icons.Default.Lock, isPassword = true)
+        Spacer(modifier = Modifier.height(12.dp))
+        RequirementRow("이메일 형식 입력", email.contains("@"))
+        RequirementRow("비밀번호 6자 이상", password.length >= 6)
+        RequirementRow("비밀번호 일치", password.isNotBlank() && password == confirm)
+        AuthError(error)
+        PrimaryButton(
+            text = "회원가입",
+            onClick = {
+                if (vm.signUp(email, password, confirm)) onSuccess() else error = "가입 정보를 다시 확인해 주세요."
+            },
+            enabled = email.isNotBlank() && password.isNotBlank() && confirm.isNotBlank()
+        )
+    }
+}
+
+@Composable
+private fun AuthFrame(
+    title: String,
+    onBackClick: () -> Unit,
+    bottomText: String,
+    onBottomClick: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.White)
+            .padding(horizontal = 24.dp, vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBackClick) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기", tint = NavyDark)
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = onBottomClick) {
+                Text(bottomText, color = NavyDark, fontSize = 12.sp)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(36.dp))
+        BusLogo(size = 58)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = NavyDark)
+        Spacer(modifier = Modifier.height(34.dp))
+
+        Column(modifier = Modifier.fillMaxWidth()) {
+            content()
         }
     }
 }
@@ -147,10 +427,7 @@ fun TimetableScreen(
             .fillMaxSize()
             .padding(top = 24.dp)
     ) {
-        CampusTabs(
-            selectedType = vm.selectedCampusType,
-            onTypeSelected = { vm.selectCampusType(it) }
-        )
+        CampusTabs(selectedType = vm.selectedCampusType, onTypeSelected = { vm.selectCampusType(it) })
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -162,45 +439,21 @@ fun TimetableScreen(
             )
 
             Spacer(modifier = Modifier.height(14.dp))
-
-            HourChipRow(
-                hours = hourList,
-                selectedHour = vm.selectedHour,
-                onHourSelected = { vm.selectHour(it) }
-            )
+            HourChipRow(hours = hourList, selectedHour = vm.selectedHour, onHourSelected = { vm.selectHour(it) })
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (vm.isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(color = NavyDark)
-            }
-        } else if (vm.schedules.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "해당 시간대 운행 정보가 없습니다",
-                    color = GrayText,
-                    fontSize = 14.sp
-                )
-            }
-        } else {
-            LazyColumn(
+        when {
+            vm.isLoading -> CenterLoading()
+            vm.schedules.isEmpty() -> EmptyState("해당 시간대 운행 정보가 없습니다.")
+            else -> LazyColumn(
                 modifier = Modifier.padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(vm.schedules, key = { it.id }) { schedule ->
-                    ScheduleCard(
-                        schedule = schedule,
-                        onClick = { onScheduleClick(schedule) }
-                    )
+                    ScheduleCard(schedule = schedule, onClick = { onScheduleClick(schedule) })
                 }
             }
         }
@@ -213,12 +466,8 @@ fun CampusTabs(
     onTypeSelected: (RouteType) -> Unit
 ) {
     Row(modifier = Modifier.fillMaxWidth()) {
-        listOf(
-            "교내" to RouteType.CAMPUS,
-            "교외" to RouteType.OFF_CAMPUS
-        ).forEach { (label, type) ->
-            val isSelected = selectedType == type
-
+        listOf("교내" to RouteType.CAMPUS, "교외" to RouteType.OFF_CAMPUS).forEach { (label, type) ->
+            val selected = selectedType == type
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -228,16 +477,15 @@ fun CampusTabs(
                 Text(
                     text = label,
                     fontSize = 14.sp,
-                    color = if (isSelected) NavyDark else GrayText,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    color = if (selected) NavyDark else GrayText,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                     modifier = Modifier.padding(vertical = 12.dp)
                 )
-
                 Box(
                     modifier = Modifier
                         .height(3.dp)
                         .fillMaxWidth()
-                        .background(if (isSelected) NavyDark else Color.Transparent)
+                        .background(if (selected) NavyDark else Color.Transparent)
                 )
             }
         }
@@ -263,14 +511,13 @@ fun RouteDropdown(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = selectedRoute?.name ?: "노선을 선택하세요",
+                text = selectedRoute?.name ?: "노선을 선택해 주세요",
                 fontSize = 13.sp,
                 color = Color(0xFF333333),
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-
             Icon(
                 imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = null,
@@ -278,26 +525,14 @@ fun RouteDropdown(
             )
         }
 
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.fillMaxWidth(0.9f)
-        ) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             routes.forEach { route ->
                 DropdownMenuItem(
                     text = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = route.name,
-                                modifier = Modifier.weight(1f)
-                            )
-
+                            Text(route.name, modifier = Modifier.weight(1f))
                             if (route.id == selectedRoute?.id) {
-                                Text(
-                                    text = "✓",
-                                    color = NavyDark,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = NavyDark, modifier = Modifier.size(16.dp))
                             }
                         }
                     },
@@ -322,20 +557,19 @@ fun HourChipRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         hours.forEach { hour ->
-            val isSelected = selectedHour == hour
-
+            val selected = selectedHour == hour
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(20.dp))
-                    .background(if (isSelected) NavyDark else Color.White)
+                    .background(if (selected) NavyDark else Color.White)
                     .clickable { onHourSelected(hour) }
                     .padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = "${hour}시",
                     fontSize = 12.sp,
-                    color = if (isSelected) Color.White else GrayText,
-                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    color = if (selected) Color.White else GrayText,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
                 )
             }
         }
@@ -347,20 +581,16 @@ fun ScheduleCard(
     schedule: BusSchedule,
     onClick: () -> Unit
 ) {
-    val seatColor = when {
-        schedule.remainingSeats <= 10 -> RedAccent
-        schedule.remainingSeats <= 30 -> OrangeAccent
-        else -> NavyDark
-    }
-
-    val alpha = if (schedule.status == BusStatus.COMPLETED) 0.5f else 1f
+    val seatColor = seatColor(schedule.remainingSeats, schedule.totalSeats)
+    val alpha = if (schedule.status == BusStatus.COMPLETED) 0.45f else 1f
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onClick() },
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
@@ -370,9 +600,7 @@ fun ScheduleCard(
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF111111).copy(alpha = alpha)
                 )
-
                 Spacer(modifier = Modifier.width(6.dp))
-
                 Text(
                     text = "(${schedule.remainingSeats}석)",
                     fontSize = 15.sp,
@@ -380,9 +608,7 @@ fun ScheduleCard(
                     color = seatColor.copy(alpha = alpha)
                 )
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 text = "현재 위치  |  ${schedule.currentLocation}",
                 fontSize = 12.sp,
@@ -406,53 +632,21 @@ fun NavigatorScreen(
             .fillMaxSize()
             .background(Color.White)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.White)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBackClick) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "뒤로가기",
-                        tint = Color(0xFF333333)
-                    )
+        Column(modifier = Modifier.fillMaxSize()) {
+            TopBar(
+                title = location?.routeName ?: "노선 정보",
+                onBackClick = onBackClick,
+                trailing = {
+                    IconButton(onClick = { vm.refreshBusLocation() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "새로고침", tint = NavyDark)
+                    }
                 }
-
-                Text(
-                    text = location?.routeName ?: "노선 정보",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF333333),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                IconButton(onClick = { vm.refreshBusLocation() }) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "새로고침",
-                        tint = NavyDark
-                    )
-                }
-            }
+            )
 
             HorizontalDivider(color = Color(0xFFEEEEEE))
 
             if (vm.isNavLoading || location == null) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator(color = NavyDark)
-                }
+                CenterLoading()
             } else {
                 Column(
                     modifier = Modifier
@@ -460,21 +654,13 @@ fun NavigatorScreen(
                         .verticalScroll(rememberScrollState())
                 ) {
                     BusStatusHeader(location)
-
                     FavoriteInfoCard(
                         location = location,
                         isFavorite = vm.isBusFavorite(location),
-                        onFavoriteClick = {
-                            vm.toggleFavoriteFromNavigator()
-                        }
+                        onFavoriteClick = { vm.toggleFavoriteFromNavigator() }
                     )
-
                     HorizontalDivider(color = Color(0xFFEEEEEE))
-
-                    VerticalRouteMap(
-                        stops = location.stops,
-                        currentStopIndex = location.currentStopIndex
-                    )
+                    VerticalRouteMap(stops = location.stops, currentStopIndex = location.currentStopIndex)
                 }
             }
         }
@@ -493,75 +679,24 @@ fun BusStatusHeader(location: BusLocationInfo) {
             .padding(vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(RedAccent)
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-        ) {
-            Text(
-                text = "잔여: ${location.remainingSeats}석",
-                fontSize = 12.sp,
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
+        SeatPill(location.remainingSeats, location.totalSeats)
         Spacer(modifier = Modifier.height(12.dp))
-
-        Box(
-            modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(NavyDark),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "🚌",
-                fontSize = 30.sp
-            )
-        }
-
+        BusLogo(size = 64)
         Spacer(modifier = Modifier.height(12.dp))
-
         Row {
-            Text(
-                text = "출발 예정 | ${location.departureTime}",
-                fontSize = 13.sp,
-                color = GrayText
-            )
-
+            MetaText("출발 예정 | ${location.departureTime}")
             Spacer(modifier = Modifier.width(16.dp))
-
-            Text(
-                text = "도착 예정 | ${location.arrivalTime}",
-                fontSize = 13.sp,
-                color = GrayText
-            )
+            MetaText("도착 예정 | ${location.arrivalTime}")
         }
-
         Spacer(modifier = Modifier.height(4.dp))
-
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "잔여석",
-                fontSize = 12.sp,
-                color = GrayText
-            )
-
+            Text("여석", fontSize = 12.sp, color = GrayText)
             Spacer(modifier = Modifier.width(4.dp))
-
-            val seatColor = when {
-                location.remainingSeats <= 10 -> RedAccent
-                location.remainingSeats <= 25 -> OrangeAccent
-                else -> NavyDark
-            }
-
             Text(
-                text = "${location.remainingSeats}석",
+                text = "${location.remainingSeats}/${location.totalSeats}",
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
-                color = seatColor
+                color = seatColor(location.remainingSeats, location.totalSeats)
             )
         }
     }
@@ -577,65 +712,34 @@ fun FavoriteInfoCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 28.dp, vertical = 16.dp),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFFF3F5F8))
+                        .background(FieldBg)
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
-                    Text(
-                        text = location.currentStopName,
-                        fontSize = 12.sp,
-                        color = Color(0xFF333333),
-                        fontWeight = FontWeight.Medium
+                    Text(location.currentStopName, fontSize = 12.sp, color = Color(0xFF333333), fontWeight = FontWeight.Medium)
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                IconButton(onClick = onFavoriteClick) {
+                    Icon(
+                        Icons.Default.Star,
+                        contentDescription = "즐겨찾기",
+                        tint = if (isFavorite) Color(0xFFFFC400) else GrayLine
                     )
                 }
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                Text(
-                    text = if (isFavorite) "★" else "☆",
-                    fontSize = 26.sp,
-                    color = if (isFavorite) Color(0xFFFFD43B) else Color(0xFFD8DEE8),
-                    modifier = Modifier.clickable { onFavoriteClick() }
-                )
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Text(
-                text = "도착 정보: 현재 ${location.currentStopName} 근처",
-                fontSize = 12.sp,
-                color = Color(0xFF333333)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "여석: ${location.remainingSeats}석",
-                fontSize = 12.sp,
-                color = Color(0xFF333333)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "노선: ${location.routeName}",
-                fontSize = 12.sp,
-                color = GrayText,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Spacer(modifier = Modifier.height(10.dp))
+            InfoLine("현재 위치", "현재 ${location.currentStopName} 근처")
+            InfoLine("좌석", "${location.remainingSeats}/${location.totalSeats}석")
+            InfoLine("노선", location.routeName)
         }
     }
 }
@@ -657,67 +761,42 @@ fun FavoriteNotificationBottomSheet(vm: BusViewModel) {
                 .padding(horizontal = 22.dp, vertical = 20.dp)
                 .navigationBarsPadding()
         ) {
-            Text(
-                text = "알림을 받을 요일을 선택해 주세요",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF111111)
-            )
-
+            Text("알림 받을 요일을 선택해 주세요", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111111))
             Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "중복 선택 가능",
-                fontSize = 12.sp,
-                color = GrayText
-            )
-
+            Text("즐겨찾기 등록 후 상단 알림 배너로 설정 결과를 보여줍니다.", fontSize = 12.sp, color = GrayText)
             Spacer(modifier = Modifier.height(20.dp))
 
             NotificationDay.values().forEach { day ->
-                val isSelected = vm.selectedNotificationDays.contains(day)
-
-                Box(
+                val selected = vm.selectedNotificationDays.contains(day)
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (isSelected) Color(0xFFE9EDF3) else Color.White)
+                        .background(if (selected) Color(0xFFE9EDF3) else Color.White)
                         .clickable { vm.toggleNotificationDay(day) }
-                        .padding(horizontal = 14.dp, vertical = 14.dp)
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = day.label,
                         fontSize = 14.sp,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) NavyDark else GrayText
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (selected) NavyDark else GrayText,
+                        modifier = Modifier.weight(1f)
                     )
+                    if (selected) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = NavyDark, modifier = Modifier.size(18.dp))
+                    }
                 }
-
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-
-            Button(
+            PrimaryButton(
+                text = "설정하기",
                 onClick = { vm.saveFavoriteWithNotificationDays() },
-                enabled = vm.selectedNotificationDays.isNotEmpty(),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = NavyDark,
-                    contentColor = Color.White,
-                    disabledContainerColor = Color(0xFFF1F1F1),
-                    disabledContentColor = GrayText
-                )
-            ) {
-                Text(
-                    text = "설정하기",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
+                enabled = vm.selectedNotificationDays.isNotEmpty()
+            )
         }
     }
 }
@@ -737,27 +816,19 @@ fun VerticalRouteMap(
                 modifier = Modifier.height(IntrinsicSize.Min),
                 verticalAlignment = Alignment.Top
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(32.dp)
-                ) {
-                    if (index > 0) {
-                        Box(
-                            modifier = Modifier
-                                .width(3.dp)
-                                .height(20.dp)
-                                .background(if (index <= currentStopIndex) NavyDark else GrayLine)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.height(20.dp))
-                    }
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(32.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(20.dp)
+                            .background(if (index > 0 && index <= currentStopIndex) NavyDark else Color.Transparent)
+                    )
 
                     val markerColor = when {
                         index < currentStopIndex -> NavyDark
                         index == currentStopIndex -> RedAccent
                         else -> GrayLine
                     }
-
                     Box(
                         modifier = Modifier
                             .size(if (index == currentStopIndex) 18.dp else 14.dp)
@@ -765,16 +836,12 @@ fun VerticalRouteMap(
                             .background(markerColor)
                     )
 
-                    if (index < stops.lastIndex) {
-                        Box(
-                            modifier = Modifier
-                                .width(3.dp)
-                                .height(20.dp)
-                                .background(if (index < currentStopIndex) NavyDark else GrayLine)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.height(20.dp))
-                    }
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(20.dp)
+                            .background(if (index < stops.lastIndex && index < currentStopIndex) NavyDark else if (index < stops.lastIndex) GrayLine else Color.Transparent)
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -790,20 +857,15 @@ fun VerticalRouteMap(
                         index == currentStopIndex -> RedAccent
                         else -> GrayText
                     }
-
                     Text(
                         text = stop.name,
                         fontSize = 14.sp,
                         color = textColor,
                         fontWeight = if (index == currentStopIndex) FontWeight.Bold else FontWeight.Normal
                     )
-
                     if (index == currentStopIndex) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "🚌",
-                            fontSize = 16.sp
-                        )
+                        Icon(Icons.Default.DirectionsBus, contentDescription = null, tint = RedAccent, modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -817,68 +879,9 @@ fun PassengerBottomBar(
     onTabClick: (BottomTab) -> Unit
 ) {
     NavigationBar(containerColor = NavyDark) {
-        NavigationBarItem(
-            selected = selectedTab == BottomTab.TIMETABLE,
-            onClick = { onTabClick(BottomTab.TIMETABLE) },
-            icon = {
-                Text(
-                    text = "🕐",
-                    fontSize = 18.sp
-                )
-            },
-            label = {
-                Text(
-                    text = "시간표",
-                    color = Color.White,
-                    fontSize = 11.sp
-                )
-            },
-            colors = NavigationBarItemDefaults.colors(
-                indicatorColor = Color.White.copy(alpha = 0.15f)
-            )
-        )
-
-        NavigationBarItem(
-            selected = selectedTab == BottomTab.FAVORITE,
-            onClick = { onTabClick(BottomTab.FAVORITE) },
-            icon = {
-                Text(
-                    text = "⭐",
-                    fontSize = 18.sp
-                )
-            },
-            label = {
-                Text(
-                    text = "즐겨찾기",
-                    color = Color.White,
-                    fontSize = 11.sp
-                )
-            },
-            colors = NavigationBarItemDefaults.colors(
-                indicatorColor = Color.White.copy(alpha = 0.15f)
-            )
-        )
-
-        NavigationBarItem(
-            selected = selectedTab == BottomTab.MYPAGE,
-            onClick = { onTabClick(BottomTab.MYPAGE) },
-            icon = {
-                Text(
-                    text = "👤",
-                    fontSize = 18.sp
-                )
-            },
-            label = {
-                Text(
-                    text = "마이페이지",
-                    color = Color.White,
-                    fontSize = 11.sp
-                )
-            },
-            colors = NavigationBarItemDefaults.colors(
-                indicatorColor = Color.White.copy(alpha = 0.15f)
-            )
-        )
+        BottomNavItem(selectedTab == BottomTab.TIMETABLE, "시간표", Icons.Default.Event) { onTabClick(BottomTab.TIMETABLE) }
+        BottomNavItem(selectedTab == BottomTab.FAVORITE, "즐겨찾기", Icons.Default.Star) { onTabClick(BottomTab.FAVORITE) }
+        BottomNavItem(selectedTab == BottomTab.MYPAGE, "마이페이지", Icons.Default.Person) { onTabClick(BottomTab.MYPAGE) }
     }
 }
 
@@ -893,36 +896,18 @@ fun FavoriteScreen(
             .background(BgLight)
             .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
-        Text(
-            text = "즐겨찾기",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = NavyDark
-        )
-
+        Text("즐겨찾기", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = NavyDark)
         Spacer(modifier = Modifier.height(16.dp))
 
         if (favorites.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "아직 추가된 즐겨찾기가 없습니다.",
-                    fontSize = 14.sp,
-                    color = GrayText
-                )
-            }
+            EmptyState("아직 추가된 즐겨찾기가 없습니다.")
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(favorites, key = { it.id }) { favorite ->
-                    FavoriteCard(
-                        favorite = favorite,
-                        onRemoveClick = { onRemoveClick(favorite) }
-                    )
+                    FavoriteCard(favorite = favorite, onRemoveClick = { onRemoveClick(favorite) })
                 }
             }
         }
@@ -936,16 +921,12 @@ fun FavoriteCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(18.dp)
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = favorite.routeName,
                     fontSize = 15.sp,
@@ -955,41 +936,16 @@ fun FavoriteCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                Text(
-                    text = "★",
-                    fontSize = 24.sp,
-                    color = Color(0xFFFFD43B),
-                    modifier = Modifier.clickable { onRemoveClick() }
-                )
+                IconButton(onClick = onRemoveClick) {
+                    Icon(Icons.Default.Star, contentDescription = "즐겨찾기 해제", tint = Color(0xFFFFC400))
+                }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = "현재 위치: ${favorite.currentStopName}",
-                fontSize = 12.sp,
-                color = Color(0xFF333333)
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "출발: ${favorite.departureTime}  |  도착 예정: ${favorite.arrivalTime}",
-                fontSize = 12.sp,
-                color = GrayText
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Text(
-                text = "여석: ${favorite.remainingSeats}석",
-                fontSize = 12.sp,
-                color = Color(0xFF333333)
-            )
-
+            InfoLine("현재 위치", favorite.currentStopName)
+            InfoLine("출발", favorite.departureTime)
+            InfoLine("도착 예정", favorite.arrivalTime)
+            InfoLine("좌석", "${favorite.remainingSeats}/${favorite.totalSeats}석")
             Spacer(modifier = Modifier.height(10.dp))
-
             Text(
                 text = "알림 요일: ${favorite.notificationDays.joinToString(", ") { it.label }}",
                 fontSize = 12.sp,
@@ -1001,31 +957,345 @@ fun FavoriteCard(
 }
 
 @Composable
-fun PlaceholderScreen(
-    title: String,
-    message: String
+fun MyPageScreen(
+    vm: BusViewModel,
+    onSignOutClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(BgLight)
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .padding(horizontal = 20.dp, vertical = 24.dp)
     ) {
-        Text(
-            text = title,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = NavyDark
-        )
+        Text("마이페이지", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = NavyDark)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BusLogo(size = 44)
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(vm.userName, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111111))
+                        Text(vm.userEmail.ifBlank { "guest@hufs.ac.kr" }, fontSize = 12.sp, color = GrayText)
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
+        SettingRow(
+            title = "상단 알림",
+            value = "즐겨찾기 버스 도착 전 알림",
+            icon = Icons.Default.Notifications
+        )
+        SettingRow(
+            title = "등록된 즐겨찾기",
+            value = "${vm.favoriteBuses.size}개",
+            icon = Icons.Default.Star
+        )
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Button(
+            onClick = onSignOutClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(50.dp),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = RedAccent)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("로그아웃", fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, contentDescription = null, tint = NavyDark, modifier = Modifier.size(22.dp))
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFF222222), modifier = Modifier.weight(1f))
+            Text(value, fontSize = 12.sp, color = GrayText)
+        }
+    }
+}
+
+@Composable
+private fun AppNotificationBanner(message: String, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFEAF2FA)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            BusLogo(size = 32)
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("셔틀 알림", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = NavyDark)
+                Text(message, fontSize = 12.sp, color = Color(0xFF333333), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopBar(
+    title: String,
+    onBackClick: () -> Unit,
+    trailing: @Composable () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onBackClick) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "뒤로가기", tint = Color(0xFF333333))
+        }
+        Text(
+            text = title,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFF333333),
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        trailing()
+    }
+}
+
+@Composable
+private fun BusLogo(size: Int) {
+    Box(
+        modifier = Modifier
+            .size(size.dp)
+            .clip(RoundedCornerShape((size / 5).dp))
+            .background(NavyDark),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            Icons.Default.DirectionsBus,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size((size * 0.58f).dp)
+        )
+    }
+}
+
+@Composable
+private fun PrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(50.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = NavyDark,
+            contentColor = Color.White,
+            disabledContainerColor = Color(0xFFF1F1F1),
+            disabledContentColor = GrayText
+        )
+    ) {
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun AuthTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isPassword: Boolean = false
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = Modifier.fillMaxWidth(),
+        placeholder = { Text(placeholder, fontSize = 12.sp) },
+        leadingIcon = { Icon(icon, contentDescription = null, tint = GrayText, modifier = Modifier.size(18.dp)) },
+        singleLine = true,
+        shape = RoundedCornerShape(8.dp),
+        visualTransformation = if (isPassword) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(keyboardType = if (isPassword) KeyboardType.Password else KeyboardType.Email),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = NavyDark,
+            unfocusedBorderColor = GrayLine,
+            focusedContainerColor = Color.White,
+            unfocusedContainerColor = Color.White
+        )
+    )
+}
+
+@Composable
+private fun RequirementRow(text: String, checked: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = if (checked) NavyDark else GrayLine, modifier = Modifier.size(14.dp))
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(text, fontSize = 12.sp, color = if (checked) NavyDark else GrayText)
+    }
+}
+
+@Composable
+private fun AuthError(error: String?) {
+    Spacer(modifier = Modifier.height(10.dp))
+    Text(
+        text = error.orEmpty(),
+        fontSize = 12.sp,
+        color = RedAccent,
+        minLines = 1
+    )
+    Spacer(modifier = Modifier.height(4.dp))
+}
+
+@Composable
+private fun InfoLine(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = 12.sp, color = GrayText, modifier = Modifier.width(72.dp))
+        Text(
+            value,
+            fontSize = 12.sp,
+            color = Color(0xFF333333),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun SeatPill(remainingSeats: Int, totalSeats: Int) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(seatColor(remainingSeats, totalSeats))
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+    ) {
+        Text("여석: $remainingSeats/$totalSeats", fontSize = 12.sp, color = Color.White, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun MetaText(text: String) {
+    Text(text, fontSize = 13.sp, color = GrayText)
+}
+
+@Composable
+private fun CenterLoading() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(color = NavyDark)
+    }
+}
+
+@Composable
+private fun EmptyState(message: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
             text = message,
+            color = GrayText,
             fontSize = 14.sp,
-            color = GrayText
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
         )
+    }
+}
+
+@Composable
+private fun RowScope.BottomNavItem(
+    selected: Boolean,
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    NavigationBarItem(
+        selected = selected,
+        onClick = onClick,
+        icon = { Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(20.dp)) },
+        label = { Text(label, color = Color.White, fontSize = 11.sp) },
+        colors = NavigationBarItemDefaults.colors(indicatorColor = Color.White.copy(alpha = 0.15f))
+    )
+}
+
+private fun seatColor(remainingSeats: Int, totalSeats: Int): Color {
+    val ratio = if (totalSeats == 0) 0f else remainingSeats.toFloat() / totalSeats
+    return when {
+        remainingSeats == 0 -> RedAccent
+        ratio <= 0.35f -> RedAccent
+        ratio <= 0.7f -> OrangeAccent
+        else -> NavyDark
+    }
+}
+
+private fun createShuttleNotificationChannel(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+
+    val channel = NotificationChannel(
+        SHUTTLE_NOTIFICATION_CHANNEL_ID,
+        "셔틀버스 알림",
+        NotificationManager.IMPORTANCE_DEFAULT
+    ).apply {
+        description = "즐겨찾기 셔틀버스 도착 및 여석 알림"
+    }
+
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    manager.createNotificationChannel(channel)
+}
+
+private fun showShuttleNotification(context: Context, message: String) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return
+    }
+
+    val notification = NotificationCompat.Builder(context, SHUTTLE_NOTIFICATION_CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_dialog_info)
+        .setContentTitle("셔틀 알림")
+        .setContentText(message)
+        .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+        .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+        .setAutoCancel(true)
+        .build()
+
+    runCatching {
+        NotificationManagerCompat.from(context).notify(1001, notification)
     }
 }

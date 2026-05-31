@@ -15,6 +15,15 @@ class BusViewModel : ViewModel() {
 
     private val repository = BusRepository()
 
+    var isAuthenticated by mutableStateOf(false)
+        private set
+
+    var userEmail by mutableStateOf("")
+        private set
+
+    var userName by mutableStateOf("승객")
+        private set
+
     var selectedCampusType by mutableStateOf(RouteType.OFF_CAMPUS)
         private set
 
@@ -49,6 +58,9 @@ class BusViewModel : ViewModel() {
         private set
 
     private var pendingFavoriteBus by mutableStateOf<BusLocationInfo?>(null)
+
+    var lastNotificationMessage by mutableStateOf<String?>(null)
+        private set
 
     private var autoRefreshJob: Job? = null
 
@@ -96,6 +108,28 @@ class BusViewModel : ViewModel() {
 
     fun refreshSchedules() {
         loadSchedules()
+    }
+
+    fun signIn(email: String, password: String): Boolean {
+        val normalizedEmail = email.trim()
+        if (normalizedEmail.isBlank() || password.length < 4) return false
+
+        userEmail = normalizedEmail
+        userName = normalizedEmail.substringBefore("@").ifBlank { "승객" }
+        isAuthenticated = true
+        return true
+    }
+
+    fun signUp(email: String, password: String, confirmedPassword: String): Boolean {
+        if (email.isBlank() || password.length < 6 || password != confirmedPassword) return false
+        return signIn(email, password)
+    }
+
+    fun signOut() {
+        isAuthenticated = false
+        userEmail = ""
+        userName = "승객"
+        stopAutoRefresh()
     }
 
     fun loadBusLocation(scheduleId: Long) {
@@ -195,7 +229,13 @@ class BusViewModel : ViewModel() {
         favoriteBuses = favoriteBuses
             .filterNot { it.busId == location.busId && it.routeId == location.routeId } + favorite
 
+        lastNotificationMessage = "${location.routeName} 알림이 설정되었습니다."
+
         closeFavoriteSheet()
+    }
+
+    fun clearNotificationMessage() {
+        lastNotificationMessage = null
     }
 
     fun removeFavorite(busId: Long, routeId: Long) {
