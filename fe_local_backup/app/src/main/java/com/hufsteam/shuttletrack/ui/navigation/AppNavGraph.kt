@@ -8,6 +8,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.hufsteam.shuttletrack.data.model.UserRole
 import com.hufsteam.shuttletrack.ui.admin.AdminMainScreen
+import com.hufsteam.shuttletrack.ui.admin.AdminViewModel
+import com.hufsteam.shuttletrack.ui.admin.RouteManagementScreen
+import com.hufsteam.shuttletrack.ui.admin.StopManagementScreen
+import com.hufsteam.shuttletrack.ui.admin.TimetableManagementScreen
 import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.auth.LoginScreen
 import com.hufsteam.shuttletrack.ui.auth.SignUpScreen
@@ -24,7 +28,8 @@ import com.hufsteam.shuttletrack.ui.timetable.TimetableScreen
 @Composable
 fun AppNavGraph(
     authViewModel: AuthViewModel = viewModel(),
-    driverViewModel: DriverViewModel = viewModel()
+    driverViewModel: DriverViewModel = viewModel(),
+    adminViewModel: AdminViewModel = viewModel()
 ) {
     val navController = rememberNavController()
 
@@ -93,9 +98,33 @@ fun AppNavGraph(
 
         composable(Screen.AdminMain.route) {
             AdminMainScreen(
-                viewModel     = authViewModel,
-                onLogout      = { doLogout(navController, authViewModel) },
-                onGoTimetable = { navController.navigate(Screen.Timetable.createRoute("admin")) }
+                viewModel               = authViewModel,
+                onLogout                = { doLogout(navController, authViewModel) },
+                onGoTimetable           = { navController.navigate(Screen.Timetable.createRoute("admin")) },
+                onGoRouteManagement     = { navController.navigate(Screen.RouteManagement.route) },
+                onGoStopManagement      = { navController.navigate(Screen.StopManagement.route) },
+                onGoTimetableManagement = { navController.navigate(Screen.TimetableManagement.route) }
+            )
+        }
+
+        composable(Screen.RouteManagement.route) {
+            RouteManagementScreen(
+                adminViewModel = adminViewModel,
+                onBack         = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.StopManagement.route) {
+            StopManagementScreen(
+                adminViewModel = adminViewModel,
+                onBack         = { navController.popBackStack() }
+            )
+        }
+
+        composable(Screen.TimetableManagement.route) {
+            TimetableManagementScreen(
+                adminViewModel = adminViewModel,
+                onBack         = { navController.popBackStack() }
             )
         }
 

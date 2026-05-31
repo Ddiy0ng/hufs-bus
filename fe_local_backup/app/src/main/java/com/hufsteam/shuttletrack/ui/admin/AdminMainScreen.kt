@@ -36,7 +36,10 @@ import kotlinx.coroutines.launch
 fun AdminMainScreen(
     viewModel: AuthViewModel,
     onLogout: () -> Unit,
-    onGoTimetable: () -> Unit = {}
+    onGoTimetable: () -> Unit = {},
+    onGoRouteManagement: () -> Unit = {},
+    onGoStopManagement: () -> Unit = {},
+    onGoTimetableManagement: () -> Unit = {}
 ) {
     var hasFile      by remember { mutableStateOf(false) }
     var isUploaded   by remember { mutableStateOf(false) }
@@ -153,6 +156,14 @@ fun AdminMainScreen(
                 }
 
                 Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = DividerColor)
+                Spacer(Modifier.height(20.dp))
+
+                AdminSectionHeader("운영 관리")
+                AdminMenuRow("노선 관리",    onClick = onGoRouteManagement)
+                AdminMenuRow("정류장 관리",  onClick = onGoStopManagement)
+                AdminMenuRow("시간표 관리",  onClick = onGoTimetableManagement)
+                Spacer(Modifier.height(24.dp))
                 HorizontalDivider(color = DividerColor)
                 Spacer(Modifier.height(20.dp))
 
