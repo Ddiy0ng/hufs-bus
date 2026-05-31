@@ -12,6 +12,7 @@ import hufsbus.spring.domain.timetable.repository.TimetableRepository;
 import hufsbus.spring.domain.timetable.timetableEnum.BusStopEnum;
 import hufsbus.spring.domain.timetable.timetableEnum.BusWayEnum;
 import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;
+import hufsbus.spring.domain.util.FileUpload;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
 import jakarta.transaction.Transactional;
@@ -32,19 +33,40 @@ public class BusScheduleService {
     private final BusRouteRepository busRouteRepository;
     private final TimetableRepository timetableRepository;
     private final BusStopRepository busStopRepository;
+    private final FileUpload fileUpload;
 
     /*-----------액셀 업로드 및 저장-----------*/
     @Transactional
-    public void createTimetables(MultipartFile multiPartFile) {
+    public void createTimetables(MultipartFile multipartFile) {
 
-        try (InputStream inputStream = multiPartFile.getInputStream()) {
-            List<ExcelRequestDto> excelRequestDtoList = FileUpload.fileToTimetable(inputStream);
+        try (InputStream inputStream = multipartFile.getInputStream()) {
+            List<ExcelRequestDto> excelRequestDtoList = fileUpload.fileToTimetable(inputStream);
 
             for (ExcelRequestDto excelRequestDto : excelRequestDtoList) {
                 saveTimetable(excelRequestDto);
             }
         } catch (IOException e) {
-            throw new CustomException(ErrorCode.CREATE_TIMETABLE_EXCEPTION);
+            throw new CustomException(ErrorCode.PARSE_TIMETABLE_EXCEPTION);
+        }
+    }
+
+    /*-----------시간표 변경-----------*/
+    @Transactional
+    public void updateTimetables(MultipartFile multipartFile) {
+
+        try (InputStream inputStream = multipartFile.getInputStream()) {
+            List<ExcelRequestDto> excelRequestDtoList = fileUpload.fileToTimetable(inputStream);
+
+            // 기존 시간표 삭제
+            timetableRepository.deleteAll();
+            busStopRepository.deleteAll();
+            busRouteRepository.deleteAll();
+
+            for (ExcelRequestDto excelRequestDto : excelRequestDtoList) {
+                saveTimetable(excelRequestDto);
+            }
+        } catch (IOException e) {
+            throw new CustomException(ErrorCode.PARSE_TIMETABLE_EXCEPTION);
         }
     }
 

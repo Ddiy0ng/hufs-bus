@@ -1,4 +1,4 @@
-package hufsbus.spring.domain.timetable.service;
+package hufsbus.spring.domain.util;
 
 import hufsbus.spring.domain.timetable.dto.ExcelRequestDto;
 import hufsbus.spring.domain.timetable.timetableEnum.BusStopEnum;
@@ -7,16 +7,19 @@ import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
 import org.apache.poi.ss.usermodel.*;
+import org.springframework.stereotype.Component;
 
 import java.io.InputStream;
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
+@Component
 public class FileUpload {
 
-    public static List<ExcelRequestDto> fileToTimetable(InputStream inputStream) {
+    /*-----------액셀 파싱-----------*/
+    // 시간표 등록
+    public List<ExcelRequestDto> fileToTimetable(InputStream inputStream) {
 
         try (Workbook workbook = WorkbookFactory.create(inputStream)) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -53,6 +56,7 @@ public class FileUpload {
         }
     }
 
+    // 빈 행인지 확인
     private static boolean isBlankRow(Row row) {
         for (int i = 0; i <= 4; i++) {
             Cell cell = row.getCell(i);
@@ -65,6 +69,7 @@ public class FileUpload {
         return true;
     }
 
+    // 셀 값
     private static String getCellValue(Row row, int index) {
         Cell cell = row.getCell(index);
 
@@ -80,5 +85,9 @@ public class FileUpload {
 
         return value;
     }
+
+
+    /*-----------pdf 파싱-----------*/
+
 }
 

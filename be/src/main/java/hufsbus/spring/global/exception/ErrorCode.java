@@ -15,7 +15,7 @@ public enum ErrorCode {
     NO_BUS_STOP_ENUM(HttpStatus.BAD_REQUEST, "정확한 버스 정류장 이름이어야 합니다."),
     ROUTE_PARSING_EXCEPTION(HttpStatus.BAD_REQUEST, "경로 파싱 중 에러가 발생했습니다."),
     PARSED_ROUTE_EMPTY_EXCEPTION(HttpStatus.BAD_REQUEST, "파싱한 경로값이 EMPTY 상태입니다."),
-    CREATE_TIMETABLE_EXCEPTION(HttpStatus.BAD_REQUEST, "시간표 생성 중 에러가 발생했습니다."),
+    PARSE_TIMETABLE_EXCEPTION(HttpStatus.BAD_REQUEST, "시간표 생성 중 에러가 발생했습니다."),
     NO_ROUTES_EXISTS_EXCEPTION(HttpStatus.BAD_REQUEST, "노선이 존재하지 않습니다.");
 
     private final HttpStatus httpStatus;
