@@ -131,7 +131,21 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class BottomTab { TIMETABLE, FAVORITE, MYPAGE }
-enum class AppScreen { LANDING, LOGIN, SIGN_UP, TIMETABLE, NAVIGATOR, FAVORITE, MYPAGE }
+enum class AppScreen {
+    LANDING,
+    LOGIN,
+    SIGN_UP,
+    TIMETABLE,
+    NAVIGATOR,
+    FAVORITE,
+    MYPAGE,
+    DRIVER_HOME,
+    DRIVER_OPERATION,
+    ADMIN_HOME,
+    ADMIN_ROUTES,
+    ADMIN_STOPS,
+    ADMIN_TIMETABLE
+}
 
 @Composable
 fun PassengerApp(vm: BusViewModel = viewModel()) {
@@ -187,7 +201,9 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
             when (currentScreen) {
                 AppScreen.LANDING -> LandingScreen(
                     onLoginClick = { currentScreen = AppScreen.LOGIN },
-                    onSignUpClick = { currentScreen = AppScreen.SIGN_UP }
+                    onSignUpClick = { currentScreen = AppScreen.SIGN_UP },
+                    onDriverClick = { currentScreen = AppScreen.DRIVER_HOME },
+                    onAdminClick = { currentScreen = AppScreen.ADMIN_HOME }
                 )
 
                 AppScreen.LOGIN -> LoginScreen(
@@ -247,6 +263,34 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
                         currentScreen = AppScreen.LANDING
                     }
                 )
+
+                AppScreen.DRIVER_HOME -> DriverHomeScreen(
+                    onBackClick = { currentScreen = AppScreen.LANDING },
+                    onStartOperation = { currentScreen = AppScreen.DRIVER_OPERATION }
+                )
+
+                AppScreen.DRIVER_OPERATION -> DriverOperationScreen(
+                    onBackClick = { currentScreen = AppScreen.DRIVER_HOME }
+                )
+
+                AppScreen.ADMIN_HOME -> AdminHomeScreen(
+                    onBackClick = { currentScreen = AppScreen.LANDING },
+                    onGoRoutes = { currentScreen = AppScreen.ADMIN_ROUTES },
+                    onGoStops = { currentScreen = AppScreen.ADMIN_STOPS },
+                    onGoTimetable = { currentScreen = AppScreen.ADMIN_TIMETABLE }
+                )
+
+                AppScreen.ADMIN_ROUTES -> AdminRouteManagementScreen(
+                    onBackClick = { currentScreen = AppScreen.ADMIN_HOME }
+                )
+
+                AppScreen.ADMIN_STOPS -> AdminStopManagementScreen(
+                    onBackClick = { currentScreen = AppScreen.ADMIN_HOME }
+                )
+
+                AppScreen.ADMIN_TIMETABLE -> AdminTimetableManagementScreen(
+                    onBackClick = { currentScreen = AppScreen.ADMIN_HOME }
+                )
             }
 
             vm.lastNotificationMessage?.let {
@@ -264,7 +308,9 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
 @Composable
 private fun LandingScreen(
     onLoginClick: () -> Unit,
-    onSignUpClick: () -> Unit
+    onSignUpClick: () -> Unit,
+    onDriverClick: () -> Unit,
+    onAdminClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -284,6 +330,25 @@ private fun LandingScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         PrimaryButton(text = "로그인", onClick = onLoginClick)
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Text("역할별 화면 확인", fontSize = 12.sp, color = GrayText)
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SecondaryRoleButton(
+                text = "기사",
+                onClick = onDriverClick,
+                modifier = Modifier.weight(1f)
+            )
+            SecondaryRoleButton(
+                text = "관리자",
+                onClick = onAdminClick,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
         Spacer(modifier = Modifier.height(52.dp))
     }
@@ -1252,6 +1317,312 @@ private fun RowScope.BottomNavItem(
         label = { Text(label, color = Color.White, fontSize = 11.sp) },
         colors = NavigationBarItemDefaults.colors(indicatorColor = Color.White.copy(alpha = 0.15f))
     )
+}
+
+@Composable
+private fun SecondaryRoleButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = FieldBg,
+            contentColor = NavyDark
+        )
+    ) {
+        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+private data class AdminRouteItem(
+    val name: String,
+    val stops: List<String>
+)
+
+private data class AdminStopItem(
+    val name: String,
+    val memo: String
+)
+
+private data class AdminTimetableItem(
+    val route: String,
+    val time: String,
+    val dayType: String
+)
+
+@Composable
+private fun AdminHomeScreen(
+    onBackClick: () -> Unit,
+    onGoRoutes: () -> Unit,
+    onGoStops: () -> Unit,
+    onGoTimetable: () -> Unit
+) {
+    RoleFrame(
+        title = "관리자",
+        subtitle = "노선/정류장/시간표 관리",
+        onBackClick = onBackClick
+    ) {
+        AdminMenuCard("노선 관리", "운행 노선과 경유 정류장을 관리합니다.", onGoRoutes)
+        AdminMenuCard("정류장 관리", "정류장 이름과 안내 정보를 관리합니다.", onGoStops)
+        AdminMenuCard("시간표 관리", "노선별 출발 시간과 운행 유형을 관리합니다.", onGoTimetable)
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("통합 상태", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = NavyDark)
+                Spacer(modifier = Modifier.height(8.dp))
+                InfoLine("기준 폴더", "fe/app")
+                InfoLine("이전 위치", "fe_local_backup")
+                InfoLine("UI 규격", "승객 화면과 동일한 컬러/카드/버튼 기준")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminRouteManagementScreen(onBackClick: () -> Unit) {
+    val routes = remember {
+        listOf(
+            AdminRouteItem("판교역 → 글로벌캠퍼스", listOf("판교역", "성남역", "서현역", "인문경상관")),
+            AdminRouteItem("글로벌캠퍼스 → 판교역", listOf("백년관", "서현역", "성남역", "판교역")),
+            AdminRouteItem("교내 순환 상행", listOf("지석묘", "도서관", "학생회관", "인문경상관"))
+        )
+    }
+
+    RoleFrame(title = "노선 관리", subtitle = "관리자", onBackClick = onBackClick) {
+        routes.forEach {
+            AdminListCard(
+                title = it.name,
+                body = it.stops.joinToString(" → "),
+                badge = "${it.stops.size}개 정류장"
+            )
+        }
+        AdminPendingAction("노선 추가/수정/삭제 API 연결 예정")
+    }
+}
+
+@Composable
+private fun AdminStopManagementScreen(onBackClick: () -> Unit) {
+    val stops = remember {
+        listOf(
+            AdminStopItem("판교역", "교외 등교 노선 기점"),
+            AdminStopItem("서현역", "교외 노선 주요 경유지"),
+            AdminStopItem("인문경상관", "글로벌캠퍼스 주요 승하차 지점"),
+            AdminStopItem("백년관", "하교 노선 출발 지점")
+        )
+    }
+
+    RoleFrame(title = "정류장 관리", subtitle = "관리자", onBackClick = onBackClick) {
+        stops.forEach {
+            AdminListCard(title = it.name, body = it.memo, badge = "정류장")
+        }
+        AdminPendingAction("정류장 추가/수정/삭제 API 연결 예정")
+    }
+}
+
+@Composable
+private fun AdminTimetableManagementScreen(onBackClick: () -> Unit) {
+    val timetables = remember {
+        listOf(
+            AdminTimetableItem("판교역 → 글로벌캠퍼스", "07:40", "평일"),
+            AdminTimetableItem("판교역 → 글로벌캠퍼스", "08:20", "평일"),
+            AdminTimetableItem("글로벌캠퍼스 → 판교역", "17:30", "평일"),
+            AdminTimetableItem("교내 순환 상행", "09:00", "전체")
+        )
+    }
+
+    RoleFrame(title = "시간표 관리", subtitle = "관리자", onBackClick = onBackClick) {
+        timetables.forEach {
+            AdminListCard(title = it.time, body = it.route, badge = it.dayType)
+        }
+        AdminPendingAction("시간표 등록/수정/삭제 API 연결 예정")
+    }
+}
+
+@Composable
+private fun DriverHomeScreen(
+    onBackClick: () -> Unit,
+    onStartOperation: () -> Unit
+) {
+    RoleFrame(
+        title = "기사",
+        subtitle = "오늘 운행 일정",
+        onBackClick = onBackClick
+    ) {
+        AdminListCard(
+            title = "판교역 → 글로벌캠퍼스",
+            body = "출발 08:20 · 총 45석",
+            badge = "운행 대기",
+            onClick = onStartOperation
+        )
+        AdminListCard(
+            title = "글로벌캠퍼스 → 판교역",
+            body = "출발 17:30 · 총 45석",
+            badge = "운행 대기",
+            onClick = onStartOperation
+        )
+    }
+}
+
+@Composable
+private fun DriverOperationScreen(onBackClick: () -> Unit) {
+    var passengers by remember { mutableStateOf(0) }
+    var currentStop by remember { mutableStateOf(0) }
+    val stops = listOf("판교역", "성남역", "서현역", "인문경상관")
+
+    RoleFrame(
+        title = "운행 화면",
+        subtitle = "기사",
+        onBackClick = onBackClick
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                BusLogo(size = 58)
+                Spacer(modifier = Modifier.height(14.dp))
+                Text("탑승 인원", color = RedAccent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "%02d/45".format(passengers),
+                    color = RedAccent,
+                    fontSize = 34.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("현재 정류장: ${stops[currentStop]}", fontSize = 14.sp, color = NavyDark, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            SecondaryRoleButton(
+                text = "-1",
+                onClick = { if (passengers > 0) passengers-- },
+                modifier = Modifier.weight(1f)
+            )
+            SecondaryRoleButton(
+                text = "+1",
+                onClick = { if (passengers < 45) passengers++ },
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        PrimaryButton(
+            text = "다음 정류장",
+            onClick = { if (currentStop < stops.lastIndex) currentStop++ },
+            enabled = currentStop < stops.lastIndex
+        )
+    }
+}
+
+@Composable
+private fun RoleFrame(
+    title: String,
+    subtitle: String,
+    onBackClick: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(BgLight)
+    ) {
+        TopBar(
+            title = title,
+            onBackClick = onBackClick,
+            trailing = {
+                Text(
+                    text = subtitle,
+                    color = GrayText,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+            }
+        )
+        HorizontalDivider(color = GrayLine)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun AdminMenuCard(
+    title: String,
+    body: String,
+    onClick: () -> Unit
+) {
+    AdminListCard(title = title, body = body, badge = "관리", onClick = onClick)
+}
+
+@Composable
+private fun AdminListCard(
+    title: String,
+    body: String,
+    badge: String,
+    onClick: (() -> Unit)? = null
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF222222))
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(body, fontSize = 12.sp, color = GrayText, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(Color(0xFFEAF2FA))
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+            ) {
+                Text(badge, fontSize = 11.sp, color = NavyDark, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminPendingAction(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(FieldBg)
+            .padding(14.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, fontSize = 12.sp, color = GrayText, textAlign = TextAlign.Center)
+    }
 }
 
 private fun seatColor(remainingSeats: Int, totalSeats: Int): Color {
