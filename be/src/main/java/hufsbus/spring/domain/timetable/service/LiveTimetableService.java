@@ -2,12 +2,12 @@ package hufsbus.spring.domain.timetable.service;
 
 import hufsbus.spring.domain.bus.entity.Bus;
 import hufsbus.spring.domain.bus.repository.BusRepository;
-import hufsbus.spring.domain.location.entity.DriverLocation;
-import hufsbus.spring.domain.location.repository.DriverLocationRepository;
-import hufsbus.spring.domain.stop.entity.Stop;
-import hufsbus.spring.domain.stop.repository.StopRepository;
+import hufsbus.spring.domain.currentlocation.entity.DriverLocation;
+import hufsbus.spring.domain.currentlocation.repository.DriverLocationRepository;
 import hufsbus.spring.domain.timetable.dto.LiveTimetableResponse;
+import hufsbus.spring.domain.timetable.entity.BusStop;
 import hufsbus.spring.domain.timetable.entity.Timetable;
+import hufsbus.spring.domain.timetable.repository.BusStopRepository;
 import hufsbus.spring.domain.timetable.repository.TimetableRepository;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
@@ -26,7 +26,7 @@ public class LiveTimetableService {
     private final TimetableRepository timetableRepository;
     private final BusRepository busRepository;
     private final DriverLocationRepository driverLocationRepository;
-    private final StopRepository stopRepository;
+    private final BusStopRepository busStopRepository;
     private final KakaoRouteService kakaoRouteService;
 
     public LiveTimetableResponse getLive(Long timetableId) {
@@ -40,27 +40,30 @@ public class LiveTimetableService {
                 .findFirstByBusIdOrderByCreatedAtDesc(bus.getId())
                 .orElseThrow(() -> new CustomException(ErrorCode.LOCATION_NOT_FOUND));
 
-        List<Stop> stops = stopRepository.findByRouteIdOrderBySequenceAsc(
-                timetable.getRoute().getId());
+        List<BusStop> stops = busStopRepository.findByBusRouteOrderByStopOrderAsc(timetable.getBusRoute());
 
         List<LiveTimetableResponse.StopEta> stopEtas = stops.stream()
                 .map(stop -> {
-                    int eta = kakaoRouteService.getEtaMinutes(
-                            location.getLatitude(), location.getLongitude(),
-                            stop.getLatitude(), stop.getLongitude()
-                    );
-                    String etaText = eta >= 0 ? eta + "분 후 도착" : "정보 없음";
+                    String etaText;
+                    if (stop.getLatitude() != null && stop.getLongitude() != null) {
+                        int eta = kakaoRouteService.getEtaMinutes(
+                                location.getLatitude(), location.getLongitude(),
+                                stop.getLatitude(), stop.getLongitude());
+                        etaText = eta >= 0 ? eta + "분 후 도착" : "정보 없음";
+                    } else {
+                        etaText = "정보 없음";
+                    }
                     return LiveTimetableResponse.StopEta.builder()
-                            .stopName(stop.getStopName())
+                            .stopName(stop.getBusStop().getBusStopName())
                             .eta(etaText)
-                            .sequence(stop.getSequence())
+                            .sequence(stop.getStopOrder())
                             .build();
                 })
                 .collect(Collectors.toList());
 
         return LiveTimetableResponse.builder()
                 .timetableId(timetableId)
-                .plannedDepartureTime(timetable.getDepartureTime().toString())
+                .plannedDepartureTime(timetable.getDepartAt().toString())
                 .actualDepartureTime(timetable.getActualDepartureTime() != null
                         ? timetable.getActualDepartureTime().toString() : null)
                 .currentSeats(bus.getCurrentSeats())

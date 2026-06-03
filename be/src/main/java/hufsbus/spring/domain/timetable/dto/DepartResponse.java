@@ -19,7 +19,7 @@ public class DepartResponse {
     public static DepartResponse of(Timetable timetable, Bus bus) {
         return new DepartResponse(
                 timetable.getId(),
-                timetable.getActualDepartureTime().toString(),
+                timetable.getActualDepartureTime() != null ? timetable.getActualDepartureTime().toString() : null,
                 bus.getStatus().name()
         );
     }

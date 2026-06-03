@@ -15,7 +15,6 @@ public class Timetable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    // 기점 출발 시간
     @Column(name = "depart_at", nullable = false)
     private LocalTime departAt;
 
@@ -23,12 +22,17 @@ public class Timetable {
     @JoinColumn(name = "bus_route_id", nullable = false)
     private BusRoute busRoute;
 
-    public static Timetable of(LocalTime departAt, BusRoute busRoute) {
+    @Column(name = "actual_departure_time")
+    private LocalTime actualDepartureTime;
 
+    public void depart(LocalTime actualTime) {
+        this.actualDepartureTime = actualTime;
+    }
+
+    public static Timetable of(LocalTime departAt, BusRoute busRoute) {
         Timetable timetable = new Timetable();
         timetable.departAt = departAt;
         timetable.busRoute = busRoute;
-
         return timetable;
     }
 }
