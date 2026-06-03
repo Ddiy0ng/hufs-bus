@@ -1,8 +1,8 @@
-package hufsbus.spring.domain.location.controller;
+package hufsbus.spring.domain.currentlocation.controller;
 
-import hufsbus.spring.domain.location.dto.DriverLocationRequest;
-import hufsbus.spring.domain.location.dto.DriverLocationResponse;
-import hufsbus.spring.domain.location.service.DriverLocationService;
+import hufsbus.spring.domain.currentlocation.dto.DriverLocationRequest;
+import hufsbus.spring.domain.currentlocation.dto.DriverLocationResponse;
+import hufsbus.spring.domain.currentlocation.service.DriverLocationService;
 import hufsbus.spring.global.dto.ApiResponseDto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;

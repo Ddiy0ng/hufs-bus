@@ -1,6 +1,6 @@
-package hufsbus.spring.domain.location.dto;
+package hufsbus.spring.domain.currentlocation.dto;
 
-import hufsbus.spring.domain.location.entity.DriverLocation;
+import hufsbus.spring.domain.currentlocation.entity.DriverLocation;
 import lombok.Getter;
 
 @Getter

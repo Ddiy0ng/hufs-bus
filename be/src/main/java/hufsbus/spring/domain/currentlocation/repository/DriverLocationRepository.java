@@ -1,6 +1,6 @@
-package hufsbus.spring.domain.location.repository;
+package hufsbus.spring.domain.currentlocation.repository;
 
-import hufsbus.spring.domain.location.entity.DriverLocation;
+import hufsbus.spring.domain.currentlocation.entity.DriverLocation;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

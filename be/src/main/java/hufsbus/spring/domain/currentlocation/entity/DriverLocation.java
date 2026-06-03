@@ -1,4 +1,4 @@
-package hufsbus.spring.domain.location.entity;
+package hufsbus.spring.domain.currentlocation.entity;
 
 import hufsbus.spring.domain.bus.entity.Bus;
 import hufsbus.spring.global.entity.BaseEntity;

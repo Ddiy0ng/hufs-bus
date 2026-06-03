@@ -1,4 +1,4 @@
-package hufsbus.spring.domain.location.dto;
+package hufsbus.spring.domain.currentlocation.dto;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
