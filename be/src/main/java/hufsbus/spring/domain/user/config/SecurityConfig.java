@@ -36,6 +36,7 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/terms/**").permitAll()
                         .requestMatchers("/api/users/**").authenticated()
                         .requestMatchers(HttpMethod.PATCH, "/api/timetable/**").authenticated()
                         .requestMatchers("/api/timetables/**").authenticated()
