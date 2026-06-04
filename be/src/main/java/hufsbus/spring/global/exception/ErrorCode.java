@@ -39,7 +39,9 @@ public enum ErrorCode {
     EXCEPTION_WHILE_FILE_SAVE(HttpStatus.BAD_REQUEST, "파일 저장 중 오류가 발생했습니다."),
     CANT_READ_FILE_EXCEPTION(HttpStatus.BAD_REQUEST, "파일을 읽을 수 없습니다."),
     EMPTY_FILE(HttpStatus.BAD_REQUEST, "파일이 비어있습니다."),
-    NOT_PDF_FILE(HttpStatus.BAD_REQUEST,"PDF 형식 파일만 업로드할 수 있습니다.");
+    NOT_PDF_FILE(HttpStatus.BAD_REQUEST,"PDF 형식 파일만 업로드할 수 있습니다."),
+    MUST_AGREE_PRIVACY_TERM(HttpStatus.BAD_REQUEST, "개인정보 약관을 동의해야 합니다."),
+    MUST_AGREE_SERVICE_TERM(HttpStatus.BAD_REQUEST, "서비스 이용 약관을 동의해야 합니다.");
     private final HttpStatus httpStatus;
     private final String message;
 

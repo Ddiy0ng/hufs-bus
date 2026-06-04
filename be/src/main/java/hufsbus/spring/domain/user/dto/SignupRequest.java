@@ -17,4 +17,8 @@ public class SignupRequest {
     @NotBlank
     @Size(min = 8)
     private String password;
+
+    private boolean privacyTermAgree;
+
+    private boolean serviceTermAgree;
 }
