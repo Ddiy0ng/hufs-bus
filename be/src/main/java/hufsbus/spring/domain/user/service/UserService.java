@@ -40,7 +40,7 @@ public class UserService {
             throw new CustomException(ErrorCode.INVALID_CREDENTIALS);
         }
 
-        return LoginResponse.of(jwtUtil.generateToken(user.getId(), user.getEmail()), user);
+        return LoginResponse.of(jwtUtil.generateToken(user.getId(), user.getEmail(), user.getRole().name()), user);
     }
 
     @Transactional
