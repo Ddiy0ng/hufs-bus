@@ -31,5 +31,5 @@ public interface TimetableRepository extends JpaRepository<Timetable, Long> {
             @Param("routeId") Long routeId,
             @Param("startTime") LocalTime startTime,
             @Param("endTime") LocalTime endTime
-            );
+    );
 }

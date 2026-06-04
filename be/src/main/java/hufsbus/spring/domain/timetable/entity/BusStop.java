@@ -19,22 +19,24 @@ public class BusStop {
     @Column(name = "bus_stop", nullable = false)
     private BusStopEnum busStop;
 
-    // 순서
     @Column(name = "stop_order", nullable = false)
     private Integer stopOrder;
 
-    // 중간 테이블
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "bus_route_id", nullable = false)
     private BusRoute busRoute;
 
-    public static BusStop of(BusStopEnum busStopEnum, Integer stopOrder, BusRoute busRoute) {
+    @Column(name = "latitude")
+    private Double latitude;
 
+    @Column(name = "longitude")
+    private Double longitude;
+
+    public static BusStop of(BusStopEnum busStopEnum, Integer stopOrder, BusRoute busRoute) {
         BusStop busStop = new BusStop();
         busStop.busStop = busStopEnum;
         busStop.stopOrder = stopOrder;
         busStop.busRoute = busRoute;
-
         return busStop;
     }
 }

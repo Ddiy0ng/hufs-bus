@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./gradlew build:*)",
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew compileJava)",
+      "Bash(./gradlew compileJava --refresh-dependencies)",
+      "Bash(./gradlew bootRun)"
+    ]
+  }
+}
