@@ -1,8 +1,8 @@
 package hufsbus.spring.domain.favorite.entity;
 
-import hufsbus.spring.domain.auth.entity.User;
 import hufsbus.spring.domain.favorite.favoriteEnum.DayEnum;
 import hufsbus.spring.domain.timetable.entity.Timetable;
+import hufsbus.spring.domain.user.entity.User;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;

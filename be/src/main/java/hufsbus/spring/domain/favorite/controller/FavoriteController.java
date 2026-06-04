@@ -9,6 +9,7 @@ import hufsbus.spring.global.dto.ApiResponseDto;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -22,10 +23,10 @@ public class FavoriteController {
 
     @PostMapping("/favorite")
     public ResponseEntity<ApiResponseDto<Void>> createFavorite(
+            @AuthenticationPrincipal Long userId,
             @RequestBody @Valid FavoriteCreateRequestDto favoriteCreateRequestDto) {
 
         // 인증 사용자 Principal로 부터 id 사용자 id를 가져올 것
-
         // 파라미터로 id도 줄 것
         favoriteService.createFavorite(favoriteCreateRequestDto, userId);
 
@@ -34,6 +35,7 @@ public class FavoriteController {
 
     @PutMapping("/favorite")
     public ResponseEntity<ApiResponseDto<Void>> updateFavorite(
+            @AuthenticationPrincipal Long userId,
             @RequestBody @Valid FavoriteCreateRequestDto favoriteCreateRequestDto) {
         favoriteService.updateFavorite(favoriteCreateRequestDto, userId);
 
@@ -44,6 +46,7 @@ public class FavoriteController {
 
     @DeleteMapping("favorite")
     public ResponseEntity<ApiResponseDto<Void>> deleteFavorite(
+            @AuthenticationPrincipal Long userId,
             @RequestParam Long favoriteId,
             @RequestParam DayEnum day) {
 
@@ -57,6 +60,7 @@ public class FavoriteController {
 
     @GetMapping("/favorite")
     public ResponseEntity<ApiResponseDto<List<FavoriteResponseDto>>> searchFavorites(
+            @AuthenticationPrincipal Long userId,
             @RequestParam(defaultValue = "IN_CAMPUS") InOutCampusEnum inOutCampus,
             @RequestParam(defaultValue = "MON") DayEnum day
     ) {

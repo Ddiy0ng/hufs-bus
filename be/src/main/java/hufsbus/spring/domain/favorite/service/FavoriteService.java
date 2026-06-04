@@ -1,6 +1,5 @@
 package hufsbus.spring.domain.favorite.service;
 
-import hufsbus.spring.domain.auth.entity.User;
 import hufsbus.spring.domain.favorite.dto.FavoriteCreateRequestDto;
 import hufsbus.spring.domain.favorite.dto.FavoriteResponseDto;
 import hufsbus.spring.domain.favorite.entity.Favorite;
@@ -12,6 +11,8 @@ import hufsbus.spring.domain.timetable.entity.Timetable;
 import hufsbus.spring.domain.timetable.repository.BusStopRepository;
 import hufsbus.spring.domain.timetable.repository.TimetableRepository;
 import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;
+import hufsbus.spring.domain.user.entity.User;
+import hufsbus.spring.domain.user.repository.UserRepository;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
 import jakarta.transaction.Transactional;

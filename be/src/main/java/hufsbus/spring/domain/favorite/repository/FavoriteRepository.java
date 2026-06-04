@@ -1,10 +1,10 @@
 package hufsbus.spring.domain.favorite.repository;
 
-import hufsbus.spring.domain.auth.entity.User;
 import hufsbus.spring.domain.favorite.entity.Favorite;
 import hufsbus.spring.domain.favorite.favoriteEnum.DayEnum;
 import hufsbus.spring.domain.timetable.entity.Timetable;
 import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;
+import hufsbus.spring.domain.user.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -35,8 +35,6 @@ public interface FavoriteRepository extends JpaRepository<Favorite,Long> {
             @Param("day") DayEnum day,
             @Param("inOutCampus") InOutCampusEnum inOutCampus
     );
-
-    List<Favorite> findAllByUserAndDay(User user, DayEnum day);
 
     void deleteByIdAndUserAndDay(Long id, User user, DayEnum day);
 }
