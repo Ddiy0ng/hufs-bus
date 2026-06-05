@@ -29,7 +29,11 @@ public class UserService {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new CustomException(ErrorCode.DUPLICATE_EMAIL);
         }
-        userRepository.save(User.of(request.getEmail(), passwordEncoder.encode(request.getPassword())));
+        if (!request.isPrivacyTermAgree())
+            throw new CustomException(ErrorCode.MUST_AGREE_PRIVACY_TERM);
+        if (!request.isServiceTermAgree())
+            throw new CustomException(ErrorCode.MUST_AGREE_SERVICE_TERM);
+        userRepository.save(User.of(request.getEmail(), passwordEncoder.encode(request.getPassword()), request.isPrivacyTermAgree(), request.isServiceTermAgree()));
     }
 
     public LoginResponse login(LoginRequest request) {

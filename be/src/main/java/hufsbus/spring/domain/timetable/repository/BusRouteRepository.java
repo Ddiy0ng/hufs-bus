@@ -1,7 +1,6 @@
 package hufsbus.spring.domain.timetable.repository;
 
 import hufsbus.spring.domain.timetable.entity.BusRoute;
-import hufsbus.spring.domain.timetable.entity.BusStop;
 import hufsbus.spring.domain.timetable.timetableEnum.BusStopEnum;
 import hufsbus.spring.domain.timetable.timetableEnum.BusWayEnum;
 import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;

@@ -36,6 +36,7 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/terms/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/timetable").hasAuthority("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/timetable/**").hasAuthority("DRIVER")
                         .requestMatchers(HttpMethod.POST, "/api/driver/location").hasAuthority("DRIVER")

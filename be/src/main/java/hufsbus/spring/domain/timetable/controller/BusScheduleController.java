@@ -20,7 +20,7 @@ public class BusScheduleController {
     private final BusScheduleService busScheduleService;
 
     @PostMapping("/timetable")
-    public ResponseEntity<ApiResponseDto<Void>> createTimetable(@RequestParam(value = "file") MultipartFile multipartFile) throws IOException {
+    public ResponseEntity<ApiResponseDto<Void>> createTimetable(@RequestParam(value = "file") MultipartFile multipartFile) {
 
         busScheduleService.createTimetables(multipartFile);
 
@@ -46,5 +46,13 @@ public class BusScheduleController {
         List<TimetableResponseDto> timetableResponseDtoList = busScheduleService.searchTimetables(inOutCampus, routeId, startTime);
 
         return ResponseEntity.ok(ApiResponseDto.of(timetableResponseDtoList, "시간표를 성공적으로 조회했습니다."));
+    }
+
+    @PutMapping("/timetable")
+    public ResponseEntity<ApiResponseDto<Void>> updateTimetable(@RequestParam(value = "file") MultipartFile multipartFile) {
+
+        busScheduleService.updateTimetables(multipartFile);
+
+        return ResponseEntity.ok(ApiResponseDto.success("시간표를 성공적으로 업로드했습니다."));
     }
 }

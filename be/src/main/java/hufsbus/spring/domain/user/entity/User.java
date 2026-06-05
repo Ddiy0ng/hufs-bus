@@ -27,11 +27,19 @@ public class User extends BaseEntity {
     @Column(name = "role", nullable = false)
     private UserRole role;
 
-    public static User of(String email, String encodedPassword) {
+    @Column(name = "is_privacy_term_agree")
+    private boolean privacyTermAgree;
+
+    @Column(name = "is_service_term_agree")
+    private boolean serviceTermAgree;
+
+    public static User of(String email, String encodedPassword, boolean privacyTermAgree, boolean serviceTermAgree) {
         User user = new User();
         user.email = email;
         user.password = encodedPassword;
         user.role = UserRole.PASSENGER;
+        user.privacyTermAgree = privacyTermAgree;
+        user.serviceTermAgree = serviceTermAgree;
         return user;
     }
 }
