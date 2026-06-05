@@ -6,6 +6,8 @@ import hufsbus.spring.domain.timetable.dto.TimetableResponseDto;
 import hufsbus.spring.domain.timetable.entity.BusRoute;
 import hufsbus.spring.domain.timetable.entity.BusStop;
 import hufsbus.spring.domain.timetable.entity.Timetable;
+import hufsbus.spring.domain.stop.entity.StopCoordinate;
+import hufsbus.spring.domain.stop.repository.StopCoordinateRepository;
 import hufsbus.spring.domain.timetable.repository.BusRouteRepository;
 import hufsbus.spring.domain.timetable.repository.BusStopRepository;
 import hufsbus.spring.domain.timetable.repository.TimetableRepository;
@@ -23,7 +25,10 @@ import java.io.InputStream;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 @Service
@@ -32,6 +37,7 @@ public class BusScheduleService {
     private final BusRouteRepository busRouteRepository;
     private final TimetableRepository timetableRepository;
     private final BusStopRepository busStopRepository;
+    private final StopCoordinateRepository stopCoordinateRepository;
 
     /*-----------액셀 업로드 및 저장-----------*/
     @Transactional
@@ -40,8 +46,17 @@ public class BusScheduleService {
         try (InputStream inputStream = multiPartFile.getInputStream()) {
             List<ExcelRequestDto> excelRequestDtoList = FileUpload.fileToTimetable(inputStream);
 
+            Map<String, Long> batchCounts = excelRequestDtoList.stream()
+                    .collect(Collectors.groupingBy(
+                            dto -> dto.getInOutCampus().name() + "|" + dto.getBusWay().name() + "|"
+                                    + dto.getStartStop().name() + "|" + dto.getRoute().replaceAll("\\s+", "") + "|" + dto.getDepartAt(),
+                            Collectors.counting()
+                    ));
+
+            Map<String, Long> savedInSession = new HashMap<>();
+
             for (ExcelRequestDto excelRequestDto : excelRequestDtoList) {
-                saveTimetable(excelRequestDto);
+                saveTimetable(excelRequestDto, batchCounts, savedInSession);
             }
         } catch (IOException e) {
             throw new CustomException(ErrorCode.CREATE_TIMETABLE_EXCEPTION);
@@ -49,7 +64,7 @@ public class BusScheduleService {
     }
 
     // 단일 시간표 저장
-    private void saveTimetable(ExcelRequestDto excelRequestDto) {
+    private void saveTimetable(ExcelRequestDto excelRequestDto, Map<String, Long> batchCounts, Map<String, Long> savedInSession) {
 
         LocalTime departAt = excelRequestDto.getDepartAt();
         InOutCampusEnum inOutCampus = excelRequestDto.getInOutCampus();
@@ -93,12 +108,18 @@ public class BusScheduleService {
             saveBusStop(route, busRoute);
         }
 
-        if (timetableRepository.existsByBusRouteAndDepartAt(busRoute, departAt))
+        String batchKey = inOutCampus.name() + "|" + busWay.name() + "|" + startStop.name() + "|"
+                + excelRequestDto.getRoute().replaceAll("\\s+", "") + "|" + departAt;
+        long expectedCount = batchCounts.getOrDefault(batchKey, 1L);
+        long savedSoFar = savedInSession.getOrDefault(batchKey, 0L);
+
+        if (savedSoFar >= expectedCount)
             return;
 
         // Timetable 객체 생성
         Timetable timetable = Timetable.of(departAt, busRoute);
         timetableRepository.save(timetable);
+        savedInSession.merge(batchKey, 1L, Long::sum);
     }
 
     // 경로 파싱(여러 버스정류장들의 묶음이 하나로 들어오니까,,,)
@@ -121,6 +142,10 @@ public class BusScheduleService {
     private void saveBusStop(List<BusStopEnum> route, BusRoute busRoute) {
         for (int i = 0; i < route.size(); i++) {
             BusStop busStop = BusStop.of(route.get(i), i + 1, busRoute);
+            List<StopCoordinate> coords = stopCoordinateRepository.findByStopName(route.get(i).getBusStopName());
+            if (!coords.isEmpty()) {
+                busStop.setCoordinates(coords.get(0).getLatitude(), coords.get(0).getLongitude());
+            }
             busStopRepository.save(busStop);
         }
     }
