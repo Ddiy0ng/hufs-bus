@@ -37,8 +37,10 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/terms/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/timetable").hasAuthority("ADMIN")
+                        .requestMatchers(HttpMethod.PATCH, "/api/timetable/**").hasAuthority("DRIVER")
+                        .requestMatchers(HttpMethod.POST, "/api/driver/location").hasAuthority("DRIVER")
                         .requestMatchers("/api/users/**").authenticated()
-                        .requestMatchers(HttpMethod.PATCH, "/api/timetable/**").authenticated()
                         .requestMatchers("/api/timetables/**").authenticated()
                         .requestMatchers("/api/driver/**").authenticated()
                         .requestMatchers("/api/buses/**").authenticated()

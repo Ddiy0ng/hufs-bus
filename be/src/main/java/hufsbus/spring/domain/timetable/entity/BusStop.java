@@ -39,6 +39,11 @@ public class BusStop {
         busStop.busRoute = busRoute;
         return busStop;
     }
+
+    public void setCoordinates(Double latitude, Double longitude) {
+        this.latitude = latitude;
+        this.longitude = longitude;
+    }
 }
 
 

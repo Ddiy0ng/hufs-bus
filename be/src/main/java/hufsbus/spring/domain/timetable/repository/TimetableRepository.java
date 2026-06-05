@@ -16,6 +16,8 @@ public interface TimetableRepository extends JpaRepository<Timetable, Long> {
 
     Boolean existsByBusRouteAndDepartAt(BusRoute busRoute, LocalTime startTime);
 
+    long countByBusRouteAndDepartAt(BusRoute busRoute, LocalTime departAt);
+
     @Query("""
             SELECT timetable
             FROM Timetable timetable
