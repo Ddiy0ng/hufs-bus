@@ -153,6 +153,16 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
     var currentScreen by remember { mutableStateOf(AppScreen.LANDING) }
     var selectedTab by remember { mutableStateOf(BottomTab.TIMETABLE) }
     val showBottomBar = currentScreen in setOf(AppScreen.TIMETABLE, AppScreen.FAVORITE, AppScreen.MYPAGE)
+    val openHomeByRole: (UserRole) -> Unit = { role ->
+        when (role) {
+            UserRole.PASSENGER -> {
+                selectedTab = BottomTab.TIMETABLE
+                currentScreen = AppScreen.TIMETABLE
+            }
+            UserRole.DRIVER -> currentScreen = AppScreen.DRIVER_HOME
+            UserRole.ADMIN -> currentScreen = AppScreen.ADMIN_HOME
+        }
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
         onResult = {}
@@ -201,29 +211,21 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
             when (currentScreen) {
                 AppScreen.LANDING -> LandingScreen(
                     onLoginClick = { currentScreen = AppScreen.LOGIN },
-                    onSignUpClick = { currentScreen = AppScreen.SIGN_UP },
-                    onDriverClick = { currentScreen = AppScreen.DRIVER_HOME },
-                    onAdminClick = { currentScreen = AppScreen.ADMIN_HOME }
+                    onSignUpClick = { currentScreen = AppScreen.SIGN_UP }
                 )
 
                 AppScreen.LOGIN -> LoginScreen(
                     vm = vm,
                     onBackClick = { currentScreen = AppScreen.LANDING },
                     onSignUpClick = { currentScreen = AppScreen.SIGN_UP },
-                    onSuccess = {
-                        selectedTab = BottomTab.TIMETABLE
-                        currentScreen = AppScreen.TIMETABLE
-                    }
+                    onSuccess = openHomeByRole
                 )
 
                 AppScreen.SIGN_UP -> SignUpScreen(
                     vm = vm,
                     onBackClick = { currentScreen = AppScreen.LANDING },
                     onLoginClick = { currentScreen = AppScreen.LOGIN },
-                    onSuccess = {
-                        selectedTab = BottomTab.TIMETABLE
-                        currentScreen = AppScreen.TIMETABLE
-                    }
+                    onSuccess = openHomeByRole
                 )
 
                 AppScreen.TIMETABLE -> TimetableScreen(
@@ -308,9 +310,7 @@ fun PassengerApp(vm: BusViewModel = viewModel()) {
 @Composable
 private fun LandingScreen(
     onLoginClick: () -> Unit,
-    onSignUpClick: () -> Unit,
-    onDriverClick: () -> Unit,
-    onAdminClick: () -> Unit
+    onSignUpClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -331,25 +331,6 @@ private fun LandingScreen(
 
         PrimaryButton(text = "로그인", onClick = onLoginClick)
 
-        Spacer(modifier = Modifier.height(18.dp))
-
-        Text("역할별 화면 확인", fontSize = 12.sp, color = GrayText)
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SecondaryRoleButton(
-                text = "기사",
-                onClick = onDriverClick,
-                modifier = Modifier.weight(1f)
-            )
-            SecondaryRoleButton(
-                text = "관리자",
-                onClick = onAdminClick,
-                modifier = Modifier.weight(1f)
-            )
-        }
-
         Spacer(modifier = Modifier.height(52.dp))
     }
 }
@@ -359,10 +340,11 @@ private fun LoginScreen(
     vm: BusViewModel,
     onBackClick: () -> Unit,
     onSignUpClick: () -> Unit,
-    onSuccess: () -> Unit
+    onSuccess: (UserRole) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf(UserRole.PASSENGER) }
     var error by remember { mutableStateOf<String?>(null) }
 
     AuthFrame(
@@ -371,6 +353,8 @@ private fun LoginScreen(
         bottomText = "회원가입",
         onBottomClick = onSignUpClick
     ) {
+        RoleSelector(selectedRole = selectedRole, onRoleSelected = { selectedRole = it })
+        Spacer(modifier = Modifier.height(14.dp))
         AuthTextField(value = email, onValueChange = { email = it }, placeholder = "이메일을 입력해 주세요", icon = Icons.Default.Email)
         Spacer(modifier = Modifier.height(10.dp))
         AuthTextField(
@@ -384,7 +368,11 @@ private fun LoginScreen(
         PrimaryButton(
             text = "로그인",
             onClick = {
-                if (vm.signIn(email, password)) onSuccess() else error = "이메일과 비밀번호를 확인해 주세요."
+                if (vm.signIn(email, password, selectedRole)) {
+                    onSuccess(selectedRole)
+                } else {
+                    error = "이메일과 비밀번호를 확인해 주세요."
+                }
             },
             enabled = email.isNotBlank() && password.isNotBlank()
         )
@@ -396,12 +384,20 @@ private fun SignUpScreen(
     vm: BusViewModel,
     onBackClick: () -> Unit,
     onLoginClick: () -> Unit,
-    onSuccess: () -> Unit
+    onSuccess: (UserRole) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf(UserRole.PASSENGER) }
+    var serviceTermsAgreed by remember { mutableStateOf(false) }
+    var privacyTermsAgreed by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    val canSubmit = email.isNotBlank() &&
+        password.isNotBlank() &&
+        confirm.isNotBlank() &&
+        serviceTermsAgreed &&
+        privacyTermsAgreed
 
     AuthFrame(
         title = "회원가입",
@@ -409,6 +405,8 @@ private fun SignUpScreen(
         bottomText = "로그인",
         onBottomClick = onLoginClick
     ) {
+        RoleSelector(selectedRole = selectedRole, onRoleSelected = { selectedRole = it })
+        Spacer(modifier = Modifier.height(14.dp))
         AuthTextField(value = email, onValueChange = { email = it }, placeholder = "이메일을 입력해 주세요", icon = Icons.Default.Email)
         Spacer(modifier = Modifier.height(10.dp))
         AuthTextField(value = password, onValueChange = { password = it }, placeholder = "비밀번호를 입력해 주세요", icon = Icons.Default.Lock, isPassword = true)
@@ -418,13 +416,20 @@ private fun SignUpScreen(
         RequirementRow("이메일 형식 입력", email.contains("@"))
         RequirementRow("비밀번호 6자 이상", password.length >= 6)
         RequirementRow("비밀번호 일치", password.isNotBlank() && password == confirm)
+        Spacer(modifier = Modifier.height(8.dp))
+        AgreementRow("서비스 이용약관 동의", serviceTermsAgreed) { serviceTermsAgreed = !serviceTermsAgreed }
+        AgreementRow("개인정보 수집 및 이용 동의", privacyTermsAgreed) { privacyTermsAgreed = !privacyTermsAgreed }
         AuthError(error)
         PrimaryButton(
             text = "회원가입",
             onClick = {
-                if (vm.signUp(email, password, confirm)) onSuccess() else error = "가입 정보를 다시 확인해 주세요."
+                if (vm.signUp(email, password, confirm, selectedRole)) {
+                    onSuccess(selectedRole)
+                } else {
+                    error = "가입 정보를 다시 확인해 주세요."
+                }
             },
-            enabled = email.isNotBlank() && password.isNotBlank() && confirm.isNotBlank()
+            enabled = canSubmit
         )
     }
 }
@@ -1055,6 +1060,11 @@ fun MyPageScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         SettingRow(
+            title = "사용자 역할",
+            value = vm.userRole.label,
+            icon = Icons.Default.Person
+        )
+        SettingRow(
             title = "상단 알림",
             value = "즐겨찾기 버스 도착 전 알림",
             icon = Icons.Default.Notifications
@@ -1227,10 +1237,78 @@ private fun AuthTextField(
 }
 
 @Composable
+private fun RoleSelector(
+    selectedRole: UserRole,
+    onRoleSelected: (UserRole) -> Unit
+) {
+    Text(
+        text = "이용 역할",
+        fontSize = 12.sp,
+        fontWeight = FontWeight.Bold,
+        color = Color(0xFF333333),
+        modifier = Modifier.fillMaxWidth()
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        UserRole.values().forEach { role ->
+            val selected = selectedRole == role
+            Button(
+                onClick = { onRoleSelected(role) },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(42.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (selected) NavyDark else FieldBg,
+                    contentColor = if (selected) Color.White else NavyDark
+                ),
+                contentPadding = PaddingValues(horizontal = 4.dp)
+            ) {
+                Text(
+                    text = role.label,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun RequirementRow(text: String, checked: Boolean) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = if (checked) NavyDark else GrayLine, modifier = Modifier.size(14.dp))
         Spacer(modifier = Modifier.width(6.dp))
+        Text(text, fontSize = 12.sp, color = if (checked) NavyDark else GrayText)
+    }
+}
+
+@Composable
+private fun AgreementRow(
+    text: String,
+    checked: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Default.CheckCircle,
+            contentDescription = null,
+            tint = if (checked) NavyDark else GrayLine,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(text, fontSize = 12.sp, color = if (checked) NavyDark else GrayText)
     }
 }

@@ -11,6 +11,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+enum class UserRole(val label: String) {
+    PASSENGER("승객"),
+    DRIVER("기사"),
+    ADMIN("관리자")
+}
+
 class BusViewModel : ViewModel() {
 
     private val repository = BusRepository()
@@ -22,6 +28,9 @@ class BusViewModel : ViewModel() {
         private set
 
     var userName by mutableStateOf("승객")
+        private set
+
+    var userRole by mutableStateOf(UserRole.PASSENGER)
         private set
 
     var selectedCampusType by mutableStateOf(RouteType.OFF_CAMPUS)
@@ -110,25 +119,32 @@ class BusViewModel : ViewModel() {
         loadSchedules()
     }
 
-    fun signIn(email: String, password: String): Boolean {
+    fun signIn(email: String, password: String, role: UserRole = UserRole.PASSENGER): Boolean {
         val normalizedEmail = email.trim()
         if (normalizedEmail.isBlank() || password.length < 4) return false
 
         userEmail = normalizedEmail
         userName = normalizedEmail.substringBefore("@").ifBlank { "승객" }
+        userRole = role
         isAuthenticated = true
         return true
     }
 
-    fun signUp(email: String, password: String, confirmedPassword: String): Boolean {
+    fun signUp(
+        email: String,
+        password: String,
+        confirmedPassword: String,
+        role: UserRole = UserRole.PASSENGER
+    ): Boolean {
         if (email.isBlank() || password.length < 6 || password != confirmedPassword) return false
-        return signIn(email, password)
+        return signIn(email, password, role)
     }
 
     fun signOut() {
         isAuthenticated = false
         userEmail = ""
         userName = "승객"
+        userRole = UserRole.PASSENGER
         stopAutoRefresh()
     }
 
