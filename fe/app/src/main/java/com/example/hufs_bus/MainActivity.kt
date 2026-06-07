@@ -366,15 +366,17 @@ private fun LoginScreen(
         )
         AuthError(error)
         PrimaryButton(
-            text = "로그인",
+            text = if (vm.isAuthLoading) "로그인 중" else "로그인",
             onClick = {
-                if (vm.signIn(email, password, selectedRole)) {
-                    onSuccess(selectedRole)
-                } else {
-                    error = "이메일과 비밀번호를 확인해 주세요."
+                vm.signIn(email, password, selectedRole) { success, role ->
+                    if (success) {
+                        onSuccess(role)
+                    } else {
+                        error = vm.authMessage ?: "이메일과 비밀번호를 확인해 주세요."
+                    }
                 }
             },
-            enabled = email.isNotBlank() && password.isNotBlank()
+            enabled = email.isNotBlank() && password.isNotBlank() && !vm.isAuthLoading
         )
     }
 }
@@ -397,7 +399,8 @@ private fun SignUpScreen(
         password.isNotBlank() &&
         confirm.isNotBlank() &&
         serviceTermsAgreed &&
-        privacyTermsAgreed
+        privacyTermsAgreed &&
+        !vm.isAuthLoading
 
     AuthFrame(
         title = "회원가입",
@@ -414,19 +417,28 @@ private fun SignUpScreen(
         AuthTextField(value = confirm, onValueChange = { confirm = it }, placeholder = "비밀번호를 다시 입력해 주세요", icon = Icons.Default.Lock, isPassword = true)
         Spacer(modifier = Modifier.height(12.dp))
         RequirementRow("이메일 형식 입력", email.contains("@"))
-        RequirementRow("비밀번호 6자 이상", password.length >= 6)
+        RequirementRow("비밀번호 8자 이상", password.length >= 8)
         RequirementRow("비밀번호 일치", password.isNotBlank() && password == confirm)
         Spacer(modifier = Modifier.height(8.dp))
         AgreementRow("서비스 이용약관 동의", serviceTermsAgreed) { serviceTermsAgreed = !serviceTermsAgreed }
         AgreementRow("개인정보 수집 및 이용 동의", privacyTermsAgreed) { privacyTermsAgreed = !privacyTermsAgreed }
         AuthError(error)
         PrimaryButton(
-            text = "회원가입",
+            text = if (vm.isAuthLoading) "가입 중" else "회원가입",
             onClick = {
-                if (vm.signUp(email, password, confirm, selectedRole)) {
-                    onSuccess(selectedRole)
-                } else {
-                    error = "가입 정보를 다시 확인해 주세요."
+                vm.signUp(
+                    email = email,
+                    password = password,
+                    confirmedPassword = confirm,
+                    role = selectedRole,
+                    privacyTermAgree = privacyTermsAgreed,
+                    serviceTermAgree = serviceTermsAgreed
+                ) { success, role ->
+                    if (success) {
+                        onSuccess(role)
+                    } else {
+                        error = vm.authMessage ?: "가입 정보를 다시 확인해 주세요."
+                    }
                 }
             },
             enabled = canSubmit

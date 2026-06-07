@@ -54,11 +54,11 @@ enum class NotificationDay(
     val label: String,
     val serverValue: String
 ) {
-    MONDAY("월요일", "MONDAY"),
-    TUESDAY("화요일", "TUESDAY"),
-    WEDNESDAY("수요일", "WEDNESDAY"),
-    THURSDAY("목요일", "THURSDAY"),
-    FRIDAY("금요일", "FRIDAY")
+    MONDAY("월요일", "MON"),
+    TUESDAY("화요일", "TUE"),
+    WEDNESDAY("수요일", "WED"),
+    THURSDAY("목요일", "THU"),
+    FRIDAY("금요일", "FRI")
 }
 
 data class FavoriteBus(
@@ -74,19 +74,104 @@ data class FavoriteBus(
     val notificationDays: List<NotificationDay>
 )
 
-data class FavoriteRequest(
-    val busId: Long,
-    val routeId: Long,
-    val notificationDays: List<NotificationDay>
+data class SignupRequest(
+    val email: String,
+    val password: String,
+    val privacyTermAgree: Boolean,
+    val serviceTermAgree: Boolean
 )
 
-data class FavoriteNotificationRequest(
-    val favoriteId: String,
-    val notificationDays: List<NotificationDay>
+data class LoginRequest(
+    val email: String,
+    val password: String
+)
+
+data class LoginResponse(
+    val accessToken: String,
+    val userId: Long,
+    val email: String,
+    val role: String
+)
+
+data class AuthResult(
+    val accessToken: String,
+    val userId: Long,
+    val email: String,
+    val role: String
+)
+
+data class BusRouteResponse(
+    val routeId: Long,
+    val inOutCampus: String,
+    val startStop: String,
+    val endStop: String,
+    val route: String
+)
+
+data class TimetableResponse(
+    val timetableId: Long,
+    val routeId: Long,
+    val inOutCampus: String,
+    val startStop: String,
+    val endStop: String,
+    val departAt: String,
+    val routeList: List<String> = emptyList()
+)
+
+data class LiveTimetableResponse(
+    val timetableId: Long,
+    val plannedDepartureTime: String?,
+    val actualDepartureTime: String?,
+    val currentSeats: Int?,
+    val status: String?,
+    val currentLocation: LiveLocation?,
+    val stops: List<StopEta> = emptyList()
+)
+
+data class LiveLocation(
+    val latitude: Double?,
+    val longitude: Double?
+)
+
+data class StopEta(
+    val stopName: String,
+    val eta: String?,
+    val sequence: Int
+)
+
+data class DepartResponse(
+    val timetableId: Long?,
+    val status: String?
+)
+
+data class FavoriteCreateRequest(
+    val timetableId: Long,
+    val days: Set<String>
+)
+
+data class FavoriteResponse(
+    val favoriteId: Long,
+    val timetableId: Long,
+    val day: String,
+    val departAt: String,
+    val route: String
+)
+
+data class DriverLocationRequest(
+    val busId: Long,
+    val latitude: Double,
+    val longitude: Double
+)
+
+data class DriverLocationResponse(
+    val busId: Long,
+    val latitude: Double,
+    val longitude: Double,
+    val recordedAt: String
 )
 
 data class ApiResponse<T>(
-    val success: Boolean,
+    val message: String?,
     val data: T?,
-    val message: String?
+    val localDateTime: String?
 )

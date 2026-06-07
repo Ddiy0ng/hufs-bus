@@ -8,9 +8,30 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
 
-    private const val BASE_URL = "https://your-api-server.com/"
+    // Android emulator에서 로컬 Spring 서버(8080)에 붙는 기본 주소입니다.
+    // 실제 배포 서버가 생기면 이 값만 서버 URL로 바꾸면 됩니다.
+    private const val BASE_URL = "http://10.0.2.2:8080/"
+
+    @Volatile
+    private var accessToken: String? = null
+
+    fun setAccessToken(token: String?) {
+        accessToken = token
+    }
 
     private val okHttpClient = OkHttpClient.Builder()
+        .addInterceptor { chain ->
+            val token = accessToken
+            val request = if (token.isNullOrBlank()) {
+                chain.request()
+            } else {
+                chain.request()
+                    .newBuilder()
+                    .addHeader("Authorization", "Bearer $token")
+                    .build()
+            }
+            chain.proceed(request)
+        }
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BODY
         })

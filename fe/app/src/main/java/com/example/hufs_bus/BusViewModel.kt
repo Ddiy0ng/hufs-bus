@@ -14,7 +14,17 @@ import kotlinx.coroutines.launch
 enum class UserRole(val label: String) {
     PASSENGER("승객"),
     DRIVER("기사"),
-    ADMIN("관리자")
+    ADMIN("관리자");
+
+    companion object {
+        fun fromServerValue(value: String?): UserRole {
+            return when (value?.uppercase()) {
+                "ADMIN" -> ADMIN
+                "DRIVER" -> DRIVER
+                else -> PASSENGER
+            }
+        }
+    }
 }
 
 class BusViewModel : ViewModel() {
@@ -49,6 +59,12 @@ class BusViewModel : ViewModel() {
         private set
 
     var isLoading by mutableStateOf(false)
+        private set
+
+    var isAuthLoading by mutableStateOf(false)
+        private set
+
+    var authMessage by mutableStateOf<String?>(null)
         private set
 
     var busLocation by mutableStateOf<BusLocationInfo?>(null)
@@ -119,25 +135,62 @@ class BusViewModel : ViewModel() {
         loadSchedules()
     }
 
-    fun signIn(email: String, password: String, role: UserRole = UserRole.PASSENGER): Boolean {
+    fun signIn(
+        email: String,
+        password: String,
+        role: UserRole = UserRole.PASSENGER,
+        onResult: (Boolean, UserRole) -> Unit
+    ) {
         val normalizedEmail = email.trim()
-        if (normalizedEmail.isBlank() || password.length < 4) return false
+        if (normalizedEmail.isBlank() || password.length < 4) {
+            authMessage = "이메일과 비밀번호를 확인해 주세요."
+            onResult(false, role)
+            return
+        }
 
-        userEmail = normalizedEmail
-        userName = normalizedEmail.substringBefore("@").ifBlank { "승객" }
-        userRole = role
-        isAuthenticated = true
-        return true
+        viewModelScope.launch {
+            isAuthLoading = true
+            val authResult = repository.signIn(normalizedEmail, password)
+            val resolvedRole = UserRole.fromServerValue(authResult?.role).let {
+                if (authResult == null) role else it
+            }
+
+            userEmail = authResult?.email ?: normalizedEmail
+            userName = userEmail.substringBefore("@").ifBlank { resolvedRole.label }
+            userRole = resolvedRole
+            isAuthenticated = true
+            authMessage = if (authResult == null) {
+                "서버 연결 전이라 임시 로그인으로 진행합니다."
+            } else {
+                "로그인 성공"
+            }
+            isAuthLoading = false
+            onResult(true, resolvedRole)
+        }
     }
 
     fun signUp(
         email: String,
         password: String,
         confirmedPassword: String,
-        role: UserRole = UserRole.PASSENGER
-    ): Boolean {
-        if (email.isBlank() || password.length < 6 || password != confirmedPassword) return false
-        return signIn(email, password, role)
+        role: UserRole = UserRole.PASSENGER,
+        privacyTermAgree: Boolean,
+        serviceTermAgree: Boolean,
+        onResult: (Boolean, UserRole) -> Unit
+    ) {
+        if (email.isBlank() || password.length < 8 || password != confirmedPassword) {
+            authMessage = "가입 정보를 다시 확인해 주세요."
+            onResult(false, role)
+            return
+        }
+
+        viewModelScope.launch {
+            isAuthLoading = true
+            val signedUp = repository.signUp(email, password, privacyTermAgree, serviceTermAgree)
+            authMessage = if (signedUp) "회원가입 성공" else "서버 연결 전이라 임시 가입으로 진행합니다."
+            isAuthLoading = false
+            signIn(email, password, role, onResult)
+        }
     }
 
     fun signOut() {
@@ -145,6 +198,8 @@ class BusViewModel : ViewModel() {
         userEmail = ""
         userName = "승객"
         userRole = UserRole.PASSENGER
+        authMessage = null
+        repository.clearAuth()
         stopAutoRefresh()
     }
 
@@ -242,12 +297,20 @@ class BusViewModel : ViewModel() {
             notificationDays = selectedNotificationDays.toList()
         )
 
-        favoriteBuses = favoriteBuses
-            .filterNot { it.busId == location.busId && it.routeId == location.routeId } + favorite
+        viewModelScope.launch {
+            val savedOnServer = repository.saveFavorite(location.busId, selectedNotificationDays)
 
-        lastNotificationMessage = "${location.routeName} 알림이 설정되었습니다."
+            favoriteBuses = favoriteBuses
+                .filterNot { it.busId == location.busId && it.routeId == location.routeId } + favorite
 
-        closeFavoriteSheet()
+            lastNotificationMessage = if (savedOnServer) {
+                "${location.routeName} 서버 알림이 설정되었습니다."
+            } else {
+                "${location.routeName} 알림이 앱에 임시 저장되었습니다."
+            }
+
+            closeFavoriteSheet()
+        }
     }
 
     fun clearNotificationMessage() {

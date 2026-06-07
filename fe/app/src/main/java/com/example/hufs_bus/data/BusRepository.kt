@@ -4,11 +4,59 @@ class BusRepository {
 
     private val api = RetrofitClient.api
 
+    suspend fun signUp(
+        email: String,
+        password: String,
+        privacyTermAgree: Boolean,
+        serviceTermAgree: Boolean
+    ): Boolean {
+        return try {
+            val response = api.signup(
+                SignupRequest(
+                    email = email.trim(),
+                    password = password,
+                    privacyTermAgree = privacyTermAgree,
+                    serviceTermAgree = serviceTermAgree
+                )
+            )
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun signIn(email: String, password: String): AuthResult? {
+        return try {
+            val response = api.login(LoginRequest(email.trim(), password))
+            val data = response.body()?.data
+            if (response.isSuccessful && data != null) {
+                RetrofitClient.setAccessToken(data.accessToken)
+                AuthResult(
+                    accessToken = data.accessToken,
+                    userId = data.userId,
+                    email = data.email,
+                    role = data.role
+                )
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun clearAuth() {
+        RetrofitClient.setAccessToken(null)
+    }
+
     suspend fun getRoutes(type: RouteType): List<BusRoute> {
         return try {
-            val response = api.getRoutes(type.name)
-            if (response.isSuccessful) response.body()?.data ?: emptyList()
-            else getDummyRoutes(type)
+            val response = api.getRoutes(type.toServerValue())
+            if (response.isSuccessful) {
+                response.body()?.data?.map { it.toBusRoute(type) } ?: emptyList()
+            } else {
+                getDummyRoutes(type)
+            }
         } catch (e: Exception) {
             getDummyRoutes(type)
         }
@@ -16,9 +64,12 @@ class BusRepository {
 
     suspend fun getSchedules(routeId: Long, hour: Int?): List<BusSchedule> {
         return try {
-            val response = api.getSchedules(routeId, hour)
-            if (response.isSuccessful) response.body()?.data ?: emptyList()
-            else getDummySchedules(routeId, hour)
+            val response = api.getSchedules(routeId = routeId, startTime = hour)
+            if (response.isSuccessful) {
+                response.body()?.data?.map { it.toBusSchedule() } ?: emptyList()
+            } else {
+                getDummySchedules(routeId, hour)
+            }
         } catch (e: Exception) {
             getDummySchedules(routeId, hour)
         }
@@ -26,11 +77,109 @@ class BusRepository {
 
     suspend fun getBusLocation(scheduleId: Long): BusLocationInfo {
         return try {
-            val response = api.getBusLocation(scheduleId)
-            if (response.isSuccessful && response.body()?.data != null) response.body()!!.data!!
-            else getDummyBusLocation(scheduleId)
+            val liveResponse = api.getLiveTimetable(scheduleId)
+            if (liveResponse.isSuccessful && liveResponse.body() != null) {
+                liveResponse.body()!!.toBusLocationInfo(scheduleId)
+            } else {
+                getDummyBusLocation(scheduleId)
+            }
         } catch (e: Exception) {
             getDummyBusLocation(scheduleId)
+        }
+    }
+
+    suspend fun saveFavorite(timetableId: Long, days: Set<NotificationDay>): Boolean {
+        return try {
+            val request = FavoriteCreateRequest(
+                timetableId = timetableId,
+                days = days.map { it.serverValue }.toSet()
+            )
+            val response = api.createFavorite(request)
+            response.isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    suspend fun getFavorites(type: RouteType, day: NotificationDay): List<FavoriteResponse> {
+        return try {
+            val response = api.getFavorites(type.toServerValue(), day.serverValue)
+            if (response.isSuccessful) response.body()?.data ?: emptyList() else emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun removeFavorite(favoriteId: Long, day: NotificationDay): Boolean {
+        return try {
+            api.deleteFavorite(favoriteId, day.serverValue).isSuccessful
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun RouteType.toServerValue(): String {
+        return when (this) {
+            RouteType.CAMPUS -> "IN_CAMPUS"
+            RouteType.OFF_CAMPUS -> "OUT_CAMPUS"
+        }
+    }
+
+    private fun BusRouteResponse.toBusRoute(fallbackType: RouteType): BusRoute {
+        return BusRoute(
+            id = routeId,
+            name = route.ifBlank { "$startStop → $endStop" },
+            departure = startStop,
+            destination = endStop,
+            type = when (inOutCampus) {
+                "IN_CAMPUS", "교내" -> RouteType.CAMPUS
+                "OUT_CAMPUS", "교외" -> RouteType.OFF_CAMPUS
+                else -> fallbackType
+            }
+        )
+    }
+
+    private fun TimetableResponse.toBusSchedule(): BusSchedule {
+        return BusSchedule(
+            id = timetableId,
+            routeId = routeId,
+            departureTime = departAt,
+            totalSeats = 45,
+            remainingSeats = 45,
+            currentLocation = "운행 대기",
+            status = BusStatus.SCHEDULED
+        )
+    }
+
+    private fun LiveTimetableResponse.toBusLocationInfo(scheduleId: Long): BusLocationInfo {
+        val orderedStops = stops.sortedBy { it.sequence }
+        val currentStop = orderedStops.firstOrNull { !it.eta.isNullOrBlank() } ?: orderedStops.firstOrNull()
+        val stopModels = orderedStops.mapIndexed { index, stop ->
+            BusStop(index.toLong() + 1, stop.stopName, stop.sequence)
+        }
+        val seats = currentSeats ?: 45
+
+        return BusLocationInfo(
+            busId = timetableId,
+            routeId = scheduleId,
+            routeName = "실시간 셔틀",
+            currentStopIndex = stopModels.indexOfFirst { it.name == currentStop?.stopName }.coerceAtLeast(0),
+            currentStopName = currentStop?.stopName ?: "위치 확인 중",
+            stops = stopModels,
+            departureTime = actualDepartureTime ?: plannedDepartureTime ?: "-",
+            arrivalTime = currentStop?.eta ?: "계산 중",
+            remainingSeats = seats,
+            totalSeats = 45,
+            status = status.toBusStatus()
+        )
+    }
+
+    private fun String?.toBusStatus(): BusStatus {
+        return when (this) {
+            "IN_OPERATION", "RUNNING", "운행중" -> BusStatus.IN_OPERATION
+            "COMPLETED", "ARRIVED", "운행완료" -> BusStatus.COMPLETED
+            "CANCELLED", "취소" -> BusStatus.CANCELLED
+            else -> BusStatus.SCHEDULED
         }
     }
 
