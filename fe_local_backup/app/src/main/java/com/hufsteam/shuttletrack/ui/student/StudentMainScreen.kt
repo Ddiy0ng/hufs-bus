@@ -1,6 +1,11 @@
 package com.hufsteam.shuttletrack.ui.student
 
+import android.content.Context
 import android.graphics.BitmapFactory
+import android.net.Uri
+import android.provider.OpenableColumns
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -78,6 +83,12 @@ data class BusSchedule(
 data class FavoriteSchedule(
     val schedule: BusSchedule,
     val days: Set<String>
+)
+
+private data class AdminTimetableFile(
+    val uri: Uri,
+    val name: String,
+    val sizeLabel: String
 )
 
 private val notificationDays = listOf("월요일", "화요일", "수요일", "목요일", "금요일")
@@ -965,9 +976,18 @@ private fun StudentMyPageContent(
         UserRole.DRIVER -> DriverBadgeText
         UserRole.STUDENT -> StudentBadgeText
     }
-    var adminHasFile by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    var adminFile by remember { mutableStateOf<AdminTimetableFile?>(null) }
     var adminUploaded by remember { mutableStateOf(false) }
     var noticeMessage by remember { mutableStateOf<String?>(null) }
+    val timetableFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        adminFile = resolveAdminTimetableFile(context, uri)
+        adminUploaded = false
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -992,20 +1012,26 @@ private fun StudentMyPageContent(
                         Text("버스 시간표 등록", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(10.dp))
                         AdminTimetableUploadCard(
-                            hasFile = adminHasFile,
+                            file = adminFile,
                             isUploaded = adminUploaded,
                             onPickFile = {
-                                adminHasFile = true
-                                adminUploaded = false
+                                timetableFilePicker.launch(
+                                    arrayOf(
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        "application/vnd.ms-excel",
+                                        "text/csv",
+                                        "application/octet-stream"
+                                    )
+                                )
                             },
                             onRemoveFile = {
-                                adminHasFile = false
+                                adminFile = null
                                 adminUploaded = false
                             },
                             onSubmit = {
                                 if (adminUploaded) {
                                     adminUploaded = false
-                                    noticeMessage = "시간표 파일을 다시 선택할 수 있습니다"
+                                    noticeMessage = "시간표 파일을 다시 수정할 수 있습니다"
                                 } else {
                                     adminUploaded = true
                                     noticeMessage = "버스 시간표가 저장되었습니다"
@@ -1073,10 +1099,17 @@ private fun MyPageProfileHeader(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFFF5F5F5))
-            .padding(horizontal = 20.dp, vertical = 20.dp)
+            .background(Color.White)
+            .padding(horizontal = 20.dp, vertical = 16.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(92.dp)
+                .background(Color(0xFFF5F5F5))
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             BusIcon(size = 64.dp)
             Column(modifier = Modifier.padding(start = 16.dp)) {
                 Box(
@@ -1100,20 +1133,20 @@ private fun MyPageProfileHeader(
 
 @Composable
 private fun AdminTimetableUploadCard(
-    hasFile: Boolean,
+    file: AdminTimetableFile?,
     isUploaded: Boolean,
     onPickFile: () -> Unit,
     onRemoveFile: () -> Unit,
     onSubmit: () -> Unit
 ) {
-    if (!hasFile) {
+    if (file == null) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(110.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .height(96.dp)
+                .clip(RoundedCornerShape(6.dp))
                 .background(Color(0xFFF5F5F5))
-                .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(10.dp))
+                .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(6.dp))
                 .clickable(onClick = onPickFile),
             contentAlignment = Alignment.Center
         ) {
@@ -1121,14 +1154,14 @@ private fun AdminTimetableUploadCard(
                 Icon(
                     Icons.Filled.Add,
                     contentDescription = "시간표 파일 추가",
-                    tint = Color(0xFFAAAAAA),
-                    modifier = Modifier.size(28.dp)
+                    tint = Color(0xFFB8B8B8),
+                    modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "파일은 최대 10MB 이하까지만 첨부할 수 있어요",
-                    color = Color(0xFFAAAAAA),
-                    fontSize = 12.sp,
+                    color = Color(0xFFB8B8B8),
+                    fontSize = 11.sp,
                     textAlign = TextAlign.Center
                 )
             }
@@ -1137,13 +1170,15 @@ private fun AdminTimetableUploadCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(10.dp))
-                .padding(horizontal = 14.dp, vertical = 14.dp),
+                .height(46.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFFF5F6F8))
+                .border(1.dp, Color(0xFFE9ECEF), RoundedCornerShape(6.dp))
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("파일.xlsx", fontSize = 14.sp, color = Color(0xFF333333), modifier = Modifier.weight(1f))
-            Text("(10mb)", fontSize = 14.sp, color = Color(0xFF999999))
+            Text(file.name, fontSize = 14.sp, color = Color(0xFF333333), modifier = Modifier.weight(1f))
+            Text("(${file.sizeLabel})", fontSize = 13.sp, color = Color(0xFF999999))
             if (!isUploaded) {
                 Spacer(Modifier.width(8.dp))
                 Icon(
@@ -1161,15 +1196,48 @@ private fun AdminTimetableUploadCard(
         Spacer(Modifier.weight(1f))
         Button(
             onClick = onSubmit,
-            enabled = hasFile,
-            shape = RoundedCornerShape(8.dp),
+            enabled = file != null,
+            modifier = Modifier
+                .width(72.dp)
+                .height(36.dp),
+            shape = RoundedCornerShape(18.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = NavyBlue,
                 disabledContainerColor = Color(0xFFD9D9D9)
             )
         ) {
-            Text(if (isUploaded) "수정" else "등록", color = Color.White)
+            Text(if (isUploaded) "수정" else "등록", color = Color.White, fontSize = 13.sp)
         }
+    }
+}
+
+private fun resolveAdminTimetableFile(context: Context, uri: Uri): AdminTimetableFile {
+    var fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "시간표 파일"
+    var fileSize = -1L
+
+    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+        if (cursor.moveToFirst()) {
+            if (nameIndex >= 0) fileName = cursor.getString(nameIndex) ?: fileName
+            if (sizeIndex >= 0) fileSize = cursor.getLong(sizeIndex)
+        }
+    }
+
+    return AdminTimetableFile(
+        uri = uri,
+        name = fileName,
+        sizeLabel = formatAdminFileSize(fileSize)
+    )
+}
+
+private fun formatAdminFileSize(bytes: Long): String {
+    if (bytes <= 0L) return "0mb"
+    val mb = bytes / (1024f * 1024f)
+    return if (mb < 1f) {
+        "${kotlin.math.max(1, (bytes / 1024L).toInt())}kb"
+    } else {
+        "${kotlin.math.ceil(mb).toInt()}mb"
     }
 }
 
