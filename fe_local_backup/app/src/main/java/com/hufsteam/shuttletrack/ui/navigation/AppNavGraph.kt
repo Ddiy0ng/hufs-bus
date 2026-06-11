@@ -18,7 +18,6 @@ import com.hufsteam.shuttletrack.ui.auth.SignUpScreen
 import com.hufsteam.shuttletrack.ui.driver.DriverMainScreen
 import com.hufsteam.shuttletrack.ui.driver.DriverOperationScreen
 import com.hufsteam.shuttletrack.ui.driver.DriverViewModel
-import com.hufsteam.shuttletrack.ui.driver.mockDriverRoutes
 import com.hufsteam.shuttletrack.ui.home.HomeScreen
 import com.hufsteam.shuttletrack.ui.splash.SplashScreen
 import com.hufsteam.shuttletrack.ui.student.StudentMainScreen
@@ -81,8 +80,8 @@ fun AppNavGraph(
                 onGoServiceTerms = { navController.navigate(Screen.ServiceTerms.route) },
                 onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) },
                 onGoDriverTimetable = { navController.navigate(Screen.Timetable.createRoute("driver")) },
-                onGoDriverOperation = {
-                    driverViewModel.selectRoute(mockDriverRoutes.first())
+                onGoDriverOperation = { route ->
+                    driverViewModel.selectRoute(route)
                     navController.navigate(Screen.DriverOperation.route)
                 },
                 onGoAdminRouteManagement = { navController.navigate(Screen.RouteManagement.route) },

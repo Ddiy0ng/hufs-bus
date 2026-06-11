@@ -57,6 +57,8 @@ import androidx.compose.ui.unit.sp
 import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.data.model.UserRole
+import com.hufsteam.shuttletrack.ui.driver.DriverRoute
+import com.hufsteam.shuttletrack.ui.driver.mockDriverRoutes
 import com.hufsteam.shuttletrack.ui.theme.AdminBadge
 import com.hufsteam.shuttletrack.ui.theme.AdminBadgeText
 import com.hufsteam.shuttletrack.ui.theme.DividerColor
@@ -132,7 +134,7 @@ fun StudentMainScreen(
     onGoServiceTerms: () -> Unit = {},
     onGoPrivacyTerms: () -> Unit = {},
     onGoDriverTimetable: () -> Unit = {},
-    onGoDriverOperation: () -> Unit = {},
+    onGoDriverOperation: (DriverRoute) -> Unit = {},
     onGoAdminRouteManagement: () -> Unit = {},
     onGoAdminStopManagement: () -> Unit = {},
     onGoAdminTimetableManagement: () -> Unit = {},
@@ -955,7 +957,7 @@ private fun StudentMyPageContent(
     onGoServiceTerms: () -> Unit,
     onGoPrivacyTerms: () -> Unit,
     onGoDriverTimetable: () -> Unit,
-    onGoDriverOperation: () -> Unit,
+    onGoDriverOperation: (DriverRoute) -> Unit,
     onGoAdminRouteManagement: () -> Unit,
     onGoAdminStopManagement: () -> Unit,
     onGoAdminTimetableManagement: () -> Unit
@@ -1054,9 +1056,15 @@ private fun StudentMyPageContent(
 
                     UserRole.DRIVER -> {
                         MyPageSectionHeader("운행 기능")
-                        MyPageRow("오늘 운행 일정", onClick = onGoDriverTimetable)
-                        MyPageRow("운행 상태 관리", onClick = onGoDriverOperation)
-                        MyPageRow("탑승 수 관리", onClick = onGoDriverOperation)
+                        mockDriverRoutes.forEach { route ->
+                            DriverScheduleCard(
+                                route = route,
+                                onClick = { onGoDriverOperation(route) }
+                            )
+                            Spacer(Modifier.height(10.dp))
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        MyPageRow("전체 시간표 보기", onClick = onGoDriverTimetable)
                         Spacer(Modifier.height(24.dp))
                         HorizontalDivider(color = DividerColor)
                         Spacer(Modifier.height(20.dp))
@@ -1245,6 +1253,38 @@ private fun formatAdminFileSize(bytes: Long): String {
 private fun MyPageSectionHeader(title: String) {
     Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black)
     Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun DriverScheduleCard(route: DriverRoute, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                route.routeName,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF1A1A1A)
+            )
+            Spacer(Modifier.height(4.dp))
+            Text("출발 ${route.scheduledTime}", fontSize = 13.sp, color = Color(0xFF777777))
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50.dp))
+                .background(Color(0xFFEFF3FB))
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Text("운행 대기", fontSize = 12.sp, color = NavyBlue, fontWeight = FontWeight.Medium)
+        }
+    }
 }
 
 @Composable
