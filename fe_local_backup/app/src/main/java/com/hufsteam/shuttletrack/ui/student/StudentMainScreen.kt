@@ -1,6 +1,7 @@
 package com.hufsteam.shuttletrack.ui.student
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -87,7 +88,7 @@ data class FavoriteSchedule(
     val days: Set<String>
 )
 
-private data class AdminTimetableFile(
+private data class AdminUploadFile(
     val uri: Uri,
     val name: String,
     val sizeLabel: String
@@ -979,16 +980,30 @@ private fun StudentMyPageContent(
         UserRole.STUDENT -> StudentBadgeText
     }
     val context = LocalContext.current
-    var adminFile by remember { mutableStateOf<AdminTimetableFile?>(null) }
+    var adminFile by remember { mutableStateOf<AdminUploadFile?>(null) }
     var adminUploaded by remember { mutableStateOf(false) }
+    var privacyPdfFile by remember { mutableStateOf<AdminUploadFile?>(null) }
+    var privacyPdfUploaded by remember { mutableStateOf(false) }
+    var serviceTermsPdfFile by remember { mutableStateOf<AdminUploadFile?>(null) }
+    var serviceTermsPdfUploaded by remember { mutableStateOf(false) }
     var noticeMessage by remember { mutableStateOf<String?>(null) }
     val timetableFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        runCatching {
-            context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        adminFile = resolveAdminTimetableFile(context, uri)
+        persistReadPermission(context, uri)
+        adminFile = resolveAdminUploadFile(context, uri, fallbackName = "시간표 파일")
         adminUploaded = false
+    }
+    val privacyPdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        persistReadPermission(context, uri)
+        privacyPdfFile = resolveAdminUploadFile(context, uri, fallbackName = "개인정보 처리 방침.pdf")
+        privacyPdfUploaded = false
+    }
+    val serviceTermsPdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        persistReadPermission(context, uri)
+        serviceTermsPdfFile = resolveAdminUploadFile(context, uri, fallbackName = "서비스 이용 약관.pdf")
+        serviceTermsPdfUploaded = false
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -1074,8 +1089,44 @@ private fun StudentMyPageContent(
                 }
 
                 MyPageSectionHeader("서비스 안내")
-                MyPageRow("개인정보 처리 방침", onClick = onGoPrivacyTerms)
-                MyPageRow("서비스 이용 약관", onClick = onGoServiceTerms)
+                if (role == UserRole.ADMIN) {
+                    AdminPdfUploadSection(
+                        title = "개인정보 처리 방침",
+                        file = privacyPdfFile,
+                        isUploaded = privacyPdfUploaded,
+                        onPickFile = { privacyPdfPicker.launch(arrayOf("application/pdf")) },
+                        onRemoveFile = {
+                            privacyPdfFile = null
+                            privacyPdfUploaded = false
+                        },
+                        onSubmit = {
+                            privacyPdfUploaded = true
+                            noticeMessage = "개인정보 처리 방침 PDF가 저장되었습니다"
+                        }
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    AdminPdfUploadSection(
+                        title = "서비스 이용 약관",
+                        file = serviceTermsPdfFile,
+                        isUploaded = serviceTermsPdfUploaded,
+                        onPickFile = { serviceTermsPdfPicker.launch(arrayOf("application/pdf")) },
+                        onRemoveFile = {
+                            serviceTermsPdfFile = null
+                            serviceTermsPdfUploaded = false
+                        },
+                        onSubmit = {
+                            serviceTermsPdfUploaded = true
+                            noticeMessage = "서비스 이용 약관 PDF가 저장되었습니다"
+                        }
+                    )
+                } else {
+                    MyPageRow("개인정보 처리 방침") {
+                        noticeMessage = "개인정보 처리 방침 PDF 조회 API 연동 후 열립니다"
+                    }
+                    MyPageRow("서비스 이용 약관") {
+                        noticeMessage = "서비스 이용 약관 PDF 조회 API 연동 후 열립니다"
+                    }
+                }
                 Spacer(Modifier.height(24.dp))
 
                 MyPageSectionHeader("계정 설정")
@@ -1141,7 +1192,7 @@ private fun MyPageProfileHeader(
 
 @Composable
 private fun AdminTimetableUploadCard(
-    file: AdminTimetableFile?,
+    file: AdminUploadFile?,
     isUploaded: Boolean,
     onPickFile: () -> Unit,
     onRemoveFile: () -> Unit,
@@ -1219,8 +1270,79 @@ private fun AdminTimetableUploadCard(
     }
 }
 
-private fun resolveAdminTimetableFile(context: Context, uri: Uri): AdminTimetableFile {
-    var fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "시간표 파일"
+@Composable
+private fun AdminPdfUploadSection(
+    title: String,
+    file: AdminUploadFile?,
+    isUploaded: Boolean,
+    onPickFile: () -> Unit,
+    onRemoveFile: () -> Unit,
+    onSubmit: () -> Unit
+) {
+    Text(title, fontSize = 14.sp, fontWeight = FontWeight.Medium, color = Color(0xFF333333))
+    Spacer(Modifier.height(8.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .height(46.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFFF5F6F8))
+                .border(1.dp, Color(0xFFE9ECEF), RoundedCornerShape(6.dp))
+                .clickable(onClick = onPickFile)
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                file?.name ?: "PDF 파일 선택",
+                fontSize = 14.sp,
+                color = if (file == null) Color(0xFF999999) else Color(0xFF333333),
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "(${file?.sizeLabel ?: "0mb"})",
+                fontSize = 13.sp,
+                color = Color(0xFF999999)
+            )
+            if (file != null && !isUploaded) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "$title PDF 제거",
+                    tint = Color(0xFF999999),
+                    modifier = Modifier.size(20.dp).clickable(onClick = onRemoveFile)
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Button(
+            onClick = onSubmit,
+            enabled = file != null,
+            modifier = Modifier
+                .width(72.dp)
+                .height(36.dp),
+            shape = RoundedCornerShape(18.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = NavyBlue,
+                disabledContainerColor = Color(0xFFD9D9D9)
+            )
+        ) {
+            Text(if (isUploaded) "수정" else "등록", color = Color.White, fontSize = 13.sp)
+        }
+    }
+}
+
+private fun persistReadPermission(context: Context, uri: Uri) {
+    runCatching {
+        context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+}
+
+private fun resolveAdminUploadFile(context: Context, uri: Uri, fallbackName: String): AdminUploadFile {
+    var fileName = uri.lastPathSegment?.substringAfterLast('/') ?: fallbackName
     var fileSize = -1L
 
     context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
@@ -1232,7 +1354,7 @@ private fun resolveAdminTimetableFile(context: Context, uri: Uri): AdminTimetabl
         }
     }
 
-    return AdminTimetableFile(
+    return AdminUploadFile(
         uri = uri,
         name = fileName,
         sizeLabel = formatAdminFileSize(fileSize)
