@@ -87,7 +87,8 @@ fun AppNavGraph(
                 },
                 onGoAdminRouteManagement = { navController.navigate(Screen.RouteManagement.route) },
                 onGoAdminStopManagement = { navController.navigate(Screen.StopManagement.route) },
-                onGoAdminTimetableManagement = { navController.navigate(Screen.TimetableManagement.route) }
+                onGoAdminTimetableManagement = { navController.navigate(Screen.TimetableManagement.route) },
+                driverViewModel = driverViewModel
             )
         }
 

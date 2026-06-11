@@ -59,6 +59,8 @@ import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.data.model.UserRole
 import com.hufsteam.shuttletrack.ui.driver.DriverRoute
+import com.hufsteam.shuttletrack.ui.driver.DriverViewModel
+import com.hufsteam.shuttletrack.ui.driver.OperationState
 import com.hufsteam.shuttletrack.ui.driver.mockDriverRoutes
 import com.hufsteam.shuttletrack.ui.theme.AdminBadge
 import com.hufsteam.shuttletrack.ui.theme.AdminBadgeText
@@ -139,6 +141,7 @@ fun StudentMainScreen(
     onGoAdminRouteManagement: () -> Unit = {},
     onGoAdminStopManagement: () -> Unit = {},
     onGoAdminTimetableManagement: () -> Unit = {},
+    driverViewModel: DriverViewModel,
     studentBusViewModel: StudentBusViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val studentUiState = studentBusViewModel.uiState
@@ -213,7 +216,8 @@ fun StudentMainScreen(
                     onGoDriverOperation = onGoDriverOperation,
                     onGoAdminRouteManagement = onGoAdminRouteManagement,
                     onGoAdminStopManagement = onGoAdminStopManagement,
-                    onGoAdminTimetableManagement = onGoAdminTimetableManagement
+                    onGoAdminTimetableManagement = onGoAdminTimetableManagement,
+                    driverViewModel = driverViewModel
                 )
             }
 
@@ -961,7 +965,8 @@ private fun StudentMyPageContent(
     onGoDriverOperation: (DriverRoute) -> Unit,
     onGoAdminRouteManagement: () -> Unit,
     onGoAdminStopManagement: () -> Unit,
-    onGoAdminTimetableManagement: () -> Unit
+    onGoAdminTimetableManagement: () -> Unit,
+    driverViewModel: DriverViewModel
 ) {
     val role = viewModel.userRole ?: UserRole.STUDENT
     val roleLabel = when (role) {
@@ -1056,6 +1061,14 @@ private fun StudentMyPageContent(
                             }
                         )
 
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(Modifier.height(20.dp))
+
+                        AdminPassengerControlSection(
+                            driverViewModel = driverViewModel,
+                            onNotice = { noticeMessage = it }
+                        )
                         Spacer(Modifier.height(24.dp))
                         HorizontalDivider(color = DividerColor)
                         Spacer(Modifier.height(20.dp))
@@ -1375,6 +1388,186 @@ private fun formatAdminFileSize(bytes: Long): String {
 private fun MyPageSectionHeader(title: String) {
     Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black)
     Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun AdminPassengerControlSection(
+    driverViewModel: DriverViewModel,
+    onNotice: (String) -> Unit
+) {
+    val route = driverViewModel.selectedRoute
+    val operationState = driverViewModel.operationState
+    val passengers = driverViewModel.passengerCount
+    val totalSeats = route?.totalSeats ?: 45
+    val remainingSeats = (totalSeats - passengers).coerceAtLeast(0)
+    val isOperating = operationState == OperationState.OPERATING
+    val stateLabel = when (operationState) {
+        OperationState.BEFORE_DEPARTURE -> "출발 전"
+        OperationState.OPERATING -> "운행 중"
+        OperationState.COMPLETED -> "운행 완료"
+    }
+
+    MyPageSectionHeader("탑승 수 수기 집계")
+    Text(
+        "NFC 장비 입력을 대체하는 관리자용 수기 집계입니다.",
+        fontSize = 12.sp,
+        color = Color(0xFF777777)
+    )
+    Spacer(Modifier.height(12.dp))
+
+    if (route == null) {
+        Text("현재 선택된 운행이 없습니다.", fontSize = 13.sp, color = Color(0xFF777777))
+        Spacer(Modifier.height(10.dp))
+        mockDriverRoutes.forEach { candidate ->
+            AdminRouteSelectRow(
+                route = candidate,
+                onClick = {
+                    driverViewModel.selectRoute(candidate)
+                    onNotice("수기 집계 대상 운행이 선택되었습니다")
+                }
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+        return
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(10.dp))
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(route.routeName, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF222222))
+                    Spacer(Modifier.height(4.dp))
+                    Text("출발 ${route.scheduledTime}", fontSize = 12.sp, color = Color(0xFF777777))
+                }
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50.dp))
+                        .background(if (isOperating) Color(0xFFEAF3FF) else Color(0xFFF1F2F4))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        stateLabel,
+                        fontSize = 12.sp,
+                        color = if (isOperating) NavyBlue else Color(0xFF777777),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AdminSeatMetric("현재 탑승", "${passengers}/${totalSeats}")
+                AdminSeatMetric("남은 여석", "${remainingSeats}석")
+            }
+
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                AdminPassengerButton(
+                    text = "하차 -",
+                    enabled = isOperating && passengers > 0,
+                    filled = false,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        driverViewModel.decreasePassengers()
+                        onNotice("하차 인원이 반영되었습니다")
+                    }
+                )
+                AdminPassengerButton(
+                    text = "탑승 +",
+                    enabled = isOperating && passengers < totalSeats,
+                    filled = true,
+                    modifier = Modifier.weight(1f),
+                    onClick = {
+                        driverViewModel.increasePassengers()
+                        onNotice("탑승 인원이 반영되었습니다")
+                    }
+                )
+            }
+
+            if (!isOperating) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "기사가 출발 등록을 누른 뒤 수기 집계가 활성화됩니다.",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminRouteSelectRow(route: DriverRoute, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFFF5F6F8))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(route.routeName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF333333))
+            Text("출발 ${route.scheduledTime}", fontSize = 12.sp, color = Color(0xFF888888))
+        }
+        Text("선택", fontSize = 12.sp, color = NavyBlue, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun AdminSeatMetric(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.Start) {
+        Text(label, fontSize = 12.sp, color = Color(0xFF777777))
+        Spacer(Modifier.height(4.dp))
+        Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB83A25))
+    }
+}
+
+@Composable
+private fun AdminPassengerButton(
+    text: String,
+    enabled: Boolean,
+    filled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val background = when {
+        !enabled -> Color(0xFFE8EAEE)
+        filled -> NavyBlue
+        else -> Color.White
+    }
+    val foreground = when {
+        !enabled -> Color(0xFF9AA1AB)
+        filled -> Color.White
+        else -> NavyBlue
+    }
+    Box(
+        modifier = modifier
+            .height(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(background)
+            .border(1.dp, if (filled || !enabled) background else NavyBlue, RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = foreground)
+    }
 }
 
 @Composable

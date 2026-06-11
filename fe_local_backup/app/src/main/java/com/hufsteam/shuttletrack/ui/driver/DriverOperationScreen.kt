@@ -130,9 +130,7 @@ fun DriverOperationScreen(
                         total            = total,
                         remainingSeats   = remainingSeats,
                         isGpsTracking    = isGpsTracking,
-                        message          = operationMessage,
-                        onIncrease       = { driverViewModel.increasePassengers() },
-                        onDecrease       = { driverViewModel.decreasePassengers() }
+                        message          = operationMessage
                     )
                 }
 
@@ -214,9 +212,7 @@ private fun OperatingContent(
     total: Int,
     remainingSeats: Int,
     isGpsTracking: Boolean,
-    message: String,
-    onIncrease: () -> Unit,
-    onDecrease: () -> Unit
+    message: String
 ) {
     OperationStatePill(message = message, isActive = isGpsTracking)
 
@@ -227,13 +223,12 @@ private fun OperatingContent(
         total = total,
         remainingSeats = remainingSeats
     )
-
-    Spacer(Modifier.height(18.dp))
-    PassengerStepper(
-        passengers = passengers,
-        total = total,
-        onIncrease = onIncrease,
-        onDecrease = onDecrease
+    Spacer(Modifier.height(14.dp))
+    Text(
+        "탑승/하차 수는 관리자 수기 집계와 연동됩니다",
+        fontSize = 12.sp,
+        color = Color(0xFF777777),
+        textAlign = TextAlign.Center
     )
 }
 
@@ -294,62 +289,6 @@ private fun SeatSummaryContent(
                 color = NavyBlue
             )
         }
-    }
-}
-
-@Composable
-private fun PassengerStepper(
-    passengers: Int,
-    total: Int,
-    onIncrease: () -> Unit,
-    onDecrease: () -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        SeatAdjustButton(text = "하차 -", enabled = passengers > 0, filled = false, onClick = onDecrease)
-        Spacer(Modifier.width(14.dp))
-        Text(
-            "수기 집계",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-            color = Color(0xFF666666)
-        )
-        Spacer(Modifier.width(14.dp))
-        SeatAdjustButton(text = "탑승 +", enabled = passengers < total, filled = true, onClick = onIncrease)
-    }
-}
-
-@Composable
-private fun SeatAdjustButton(
-    text: String,
-    enabled: Boolean,
-    filled: Boolean,
-    onClick: () -> Unit
-) {
-    val background = when {
-        !enabled -> Color(0xFFE6E8EC)
-        filled -> NavyBlue
-        else -> Color.White
-    }
-    val foreground = when {
-        !enabled -> Color(0xFF9AA1AB)
-        filled -> Color.White
-        else -> NavyBlue
-    }
-    Box(
-        modifier = Modifier
-            .width(74.dp)
-            .height(34.dp)
-            .clip(CircleShape)
-            .background(background)
-            .border(1.2.dp, if (filled || !enabled) background else NavyBlue, CircleShape)
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(text, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = foreground)
     }
 }
 
