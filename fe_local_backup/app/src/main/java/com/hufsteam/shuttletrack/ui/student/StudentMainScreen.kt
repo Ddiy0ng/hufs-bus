@@ -632,13 +632,11 @@ private fun StraightBusRoute(
             val startXpx = startX.toPx()
             val endXpx = endX.toPx()
             val gapPx = gap.toPx()
-            val activeEndPx = startXpx + gapPx * clampedBus
             val lineStrokePx = lineStroke.toPx()
             val stopRadiusPx = stopRadius.toPx()
             val stopStrokePx = stopStroke.toPx()
 
-            drawLine(navy, Offset(startXpx, lineYpx), Offset(activeEndPx, lineYpx), strokeWidth = lineStrokePx, cap = StrokeCap.Round)
-            drawLine(inactive, Offset(activeEndPx, lineYpx), Offset(endXpx, lineYpx), strokeWidth = lineStrokePx, cap = StrokeCap.Round)
+            drawLine(navy, Offset(startXpx, lineYpx), Offset(endXpx, lineYpx), strokeWidth = lineStrokePx, cap = StrokeCap.Round)
 
             stops.forEachIndexed { index, _ ->
                 val x = startXpx + gapPx * index
