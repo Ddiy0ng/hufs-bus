@@ -15,10 +15,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
@@ -113,6 +118,13 @@ private val hours = listOf(8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
 fun StudentMainScreen(
     viewModel: AuthViewModel,
     onLogout: () -> Unit,
+    onGoServiceTerms: () -> Unit = {},
+    onGoPrivacyTerms: () -> Unit = {},
+    onGoDriverTimetable: () -> Unit = {},
+    onGoDriverOperation: () -> Unit = {},
+    onGoAdminRouteManagement: () -> Unit = {},
+    onGoAdminStopManagement: () -> Unit = {},
+    onGoAdminTimetableManagement: () -> Unit = {},
     studentBusViewModel: StudentBusViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val studentUiState = studentBusViewModel.uiState
@@ -178,7 +190,17 @@ fun StudentMainScreen(
                     }
                 )
 
-                StudentScreen.MYPAGE -> StudentMyPageContent(viewModel = viewModel, onLogout = onLogout)
+                StudentScreen.MYPAGE -> StudentMyPageContent(
+                    viewModel = viewModel,
+                    onLogout = onLogout,
+                    onGoServiceTerms = onGoServiceTerms,
+                    onGoPrivacyTerms = onGoPrivacyTerms,
+                    onGoDriverTimetable = onGoDriverTimetable,
+                    onGoDriverOperation = onGoDriverOperation,
+                    onGoAdminRouteManagement = onGoAdminRouteManagement,
+                    onGoAdminStopManagement = onGoAdminStopManagement,
+                    onGoAdminTimetableManagement = onGoAdminTimetableManagement
+                )
             }
 
             favoriteTarget?.let { target ->
@@ -914,13 +936,23 @@ private fun FavoriteDaySheet(
         }
     }
 }
-// ── 학생 마이페이지 ─────────────────────────────────────────────
+// ── 역할별 마이페이지 ───────────────────────────────────────────
 @Composable
-private fun StudentMyPageContent(viewModel: AuthViewModel, onLogout: () -> Unit) {
+private fun StudentMyPageContent(
+    viewModel: AuthViewModel,
+    onLogout: () -> Unit,
+    onGoServiceTerms: () -> Unit,
+    onGoPrivacyTerms: () -> Unit,
+    onGoDriverTimetable: () -> Unit,
+    onGoDriverOperation: () -> Unit,
+    onGoAdminRouteManagement: () -> Unit,
+    onGoAdminStopManagement: () -> Unit,
+    onGoAdminTimetableManagement: () -> Unit
+) {
     val role = viewModel.userRole ?: UserRole.STUDENT
     val roleLabel = when (role) {
         UserRole.ADMIN -> "관리자"
-        UserRole.DRIVER -> "기사"
+        UserRole.DRIVER -> "버스기사"
         UserRole.STUDENT -> "사용자"
     }
     val badgeColor = when (role) {
@@ -933,64 +965,218 @@ private fun StudentMyPageContent(viewModel: AuthViewModel, onLogout: () -> Unit)
         UserRole.DRIVER -> DriverBadgeText
         UserRole.STUDENT -> StudentBadgeText
     }
+    var adminHasFile by remember { mutableStateOf(false) }
+    var adminUploaded by remember { mutableStateOf(false) }
+    var noticeMessage by remember { mutableStateOf<String?>(null) }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
-        // 프로필 헤더 (연한 회색 배경 밴드)
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color(0xFFF5F5F5))
-                .padding(horizontal = 20.dp, vertical = 20.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BusIcon(size = 64.dp)
-                Column(modifier = Modifier.padding(start = 16.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(badgeColor)
-                            .padding(horizontal = 10.dp, vertical = 3.dp)
-                    ) {
-                        Text(roleLabel, color = badgeTextColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(viewModel.currentEmail, color = Color(0xFF555555), fontSize = 14.sp)
-                }
-            }
-        }
-        HorizontalDivider(color = DividerColor)
+    Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            MyPageProfileHeader(
+                roleLabel = roleLabel,
+                email = viewModel.currentEmail,
+                badgeColor = badgeColor,
+                badgeTextColor = badgeTextColor
+            )
+            HorizontalDivider(color = DividerColor)
 
-        // 메뉴 영역
-        Column(modifier = Modifier.padding(horizontal = 20.dp)) {
-            Spacer(Modifier.height(24.dp))
-            Text("서비스 안내", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            MyPageRow("개인정보 처리 방침") {}
-            MyPageRow("서비스 이용 약관") {}
-            Spacer(Modifier.height(24.dp))
-            if (role != UserRole.STUDENT) {
-                Text("운영 기능", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+            ) {
+                Spacer(Modifier.height(24.dp))
+
                 when (role) {
-                    UserRole.DRIVER -> {
-                        MyPageRow("오늘 운행 일정") {}
-                        MyPageRow("운행 상태 관리") {}
-                    }
                     UserRole.ADMIN -> {
-                        MyPageRow("노선 관리") {}
-                        MyPageRow("정류장 관리") {}
-                        MyPageRow("시간표 관리") {}
+                        Text("버스 시간표 등록", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(10.dp))
+                        AdminTimetableUploadCard(
+                            hasFile = adminHasFile,
+                            isUploaded = adminUploaded,
+                            onPickFile = {
+                                adminHasFile = true
+                                adminUploaded = false
+                            },
+                            onRemoveFile = {
+                                adminHasFile = false
+                                adminUploaded = false
+                            },
+                            onSubmit = {
+                                if (adminUploaded) {
+                                    adminUploaded = false
+                                    noticeMessage = "시간표 파일을 다시 선택할 수 있습니다"
+                                } else {
+                                    adminUploaded = true
+                                    noticeMessage = "버스 시간표가 저장되었습니다"
+                                }
+                            }
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(Modifier.height(20.dp))
+
+                        MyPageSectionHeader("서비스 관리")
+                        MyPageRow("노선 관리", onClick = onGoAdminRouteManagement)
+                        MyPageRow("정류장 관리", onClick = onGoAdminStopManagement)
+                        MyPageRow("시간표 관리", onClick = onGoAdminTimetableManagement)
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(Modifier.height(20.dp))
                     }
+
+                    UserRole.DRIVER -> {
+                        MyPageSectionHeader("운행 기능")
+                        MyPageRow("오늘 운행 일정", onClick = onGoDriverTimetable)
+                        MyPageRow("운행 상태 관리", onClick = onGoDriverOperation)
+                        MyPageRow("탑승 수 관리", onClick = onGoDriverOperation)
+                        Spacer(Modifier.height(24.dp))
+                        HorizontalDivider(color = DividerColor)
+                        Spacer(Modifier.height(20.dp))
+                    }
+
                     UserRole.STUDENT -> Unit
+                }
+
+                MyPageSectionHeader("서비스 안내")
+                MyPageRow("개인정보 처리 방침", onClick = onGoPrivacyTerms)
+                MyPageRow("서비스 이용 약관", onClick = onGoServiceTerms)
+                Spacer(Modifier.height(24.dp))
+
+                MyPageSectionHeader("계정 설정")
+                MyPageRow("로그아웃", onClick = onLogout)
+                MyPageRow("탈퇴하기") {
+                    noticeMessage = "회원 탈퇴는 계정 삭제 API 연동 후 활성화됩니다"
                 }
                 Spacer(Modifier.height(24.dp))
             }
-            Text("계정 설정", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(8.dp))
-            MyPageRow("로그아웃", onClick = onLogout)
-            MyPageRow("탈퇴하기") {}
+        }
+
+        noticeMessage?.let { message ->
+            MyPageNoticeBar(
+                message = message,
+                onDismiss = { noticeMessage = null },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
     }
+}
+
+@Composable
+private fun MyPageProfileHeader(
+    roleLabel: String,
+    email: String,
+    badgeColor: Color,
+    badgeTextColor: Color
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFFF5F5F5))
+            .padding(horizontal = 20.dp, vertical = 20.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BusIcon(size = 64.dp)
+            Column(modifier = Modifier.padding(start = 16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(badgeColor)
+                        .padding(horizontal = 10.dp, vertical = 3.dp)
+                ) {
+                    Text(roleLabel, color = badgeTextColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    email.ifBlank { "로그인 정보 확인 중" },
+                    color = Color(0xFF555555),
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminTimetableUploadCard(
+    hasFile: Boolean,
+    isUploaded: Boolean,
+    onPickFile: () -> Unit,
+    onRemoveFile: () -> Unit,
+    onSubmit: () -> Unit
+) {
+    if (!hasFile) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(110.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color(0xFFF5F5F5))
+                .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(10.dp))
+                .clickable(onClick = onPickFile),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "시간표 파일 추가",
+                    tint = Color(0xFFAAAAAA),
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "파일은 최대 10MB 이하까지만 첨부할 수 있어요",
+                    color = Color(0xFFAAAAAA),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(10.dp))
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("파일.xlsx", fontSize = 14.sp, color = Color(0xFF333333), modifier = Modifier.weight(1f))
+            Text("(10mb)", fontSize = 14.sp, color = Color(0xFF999999))
+            if (!isUploaded) {
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "시간표 파일 제거",
+                    tint = Color(0xFF999999),
+                    modifier = Modifier.size(20.dp).clickable(onClick = onRemoveFile)
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(8.dp))
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.weight(1f))
+        Button(
+            onClick = onSubmit,
+            enabled = hasFile,
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = NavyBlue,
+                disabledContainerColor = Color(0xFFD9D9D9)
+            )
+        ) {
+            Text(if (isUploaded) "수정" else "등록", color = Color.White)
+        }
+    }
+}
+
+@Composable
+private fun MyPageSectionHeader(title: String) {
+    Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+    Spacer(Modifier.height(8.dp))
 }
 
 @Composable
@@ -1004,6 +1190,34 @@ private fun MyPageRow(label: String, onClick: () -> Unit = {}) {
         Text(label, fontSize = 15.sp, color = Color(0xFF333333))
     }
 }
+
+@Composable
+private fun MyPageNoticeBar(
+    message: String,
+    onDismiss: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF1A1A2E))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(Icons.Filled.Info, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(message, color = Color.White, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Icon(
+            Icons.Filled.Close,
+            contentDescription = "닫기",
+            tint = Color.White,
+            modifier = Modifier.size(18.dp).clickable(onClick = onDismiss)
+        )
+    }
+}
+
 
 // ── 하단 탭바 ───────────────────────────────────────────────────
 @Composable

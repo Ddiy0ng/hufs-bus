@@ -18,6 +18,7 @@ import com.hufsteam.shuttletrack.ui.auth.SignUpScreen
 import com.hufsteam.shuttletrack.ui.driver.DriverMainScreen
 import com.hufsteam.shuttletrack.ui.driver.DriverOperationScreen
 import com.hufsteam.shuttletrack.ui.driver.DriverViewModel
+import com.hufsteam.shuttletrack.ui.driver.mockDriverRoutes
 import com.hufsteam.shuttletrack.ui.home.HomeScreen
 import com.hufsteam.shuttletrack.ui.splash.SplashScreen
 import com.hufsteam.shuttletrack.ui.student.StudentMainScreen
@@ -76,7 +77,17 @@ fun AppNavGraph(
         composable(Screen.StudentMain.route) {
             StudentMainScreen(
                 viewModel = authViewModel,
-                onLogout  = { doLogout(navController, authViewModel) }
+                onLogout  = { doLogout(navController, authViewModel) },
+                onGoServiceTerms = { navController.navigate(Screen.ServiceTerms.route) },
+                onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) },
+                onGoDriverTimetable = { navController.navigate(Screen.Timetable.createRoute("driver")) },
+                onGoDriverOperation = {
+                    driverViewModel.selectRoute(mockDriverRoutes.first())
+                    navController.navigate(Screen.DriverOperation.route)
+                },
+                onGoAdminRouteManagement = { navController.navigate(Screen.RouteManagement.route) },
+                onGoAdminStopManagement = { navController.navigate(Screen.StopManagement.route) },
+                onGoAdminTimetableManagement = { navController.navigate(Screen.TimetableManagement.route) }
             )
         }
 
@@ -130,9 +141,11 @@ fun AppNavGraph(
         }
 
         composable(Screen.ServiceTerms.route) {
+            TermsScreen(type = TermsType.SERVICE, onBack = { navController.popBackStack() })
         }
 
         composable(Screen.PrivacyTerms.route) {
+            TermsScreen(type = TermsType.PRIVACY, onBack = { navController.popBackStack() })
         }
 
         composable(Screen.Timetable.route) { backStackEntry ->
