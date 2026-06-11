@@ -10,9 +10,9 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object ShuttleApiClient {
-    const val BASE_URL: String = "http://10.0.2.2:8080"
-    private const val CONNECT_TIMEOUT_MS = 1_500
-    private const val READ_TIMEOUT_MS = 2_500
+    const val BASE_URL: String = "http://13.209.95.60:8080"
+    private const val CONNECT_TIMEOUT_MS = 5_000
+    private const val READ_TIMEOUT_MS = 8_000
 
     suspend fun getArray(path: String, token: String? = null): JSONArray? = withContext(Dispatchers.IO) {
         runCatching { request("GET", path, token, null)?.let(::JSONArray) }.getOrNull()
