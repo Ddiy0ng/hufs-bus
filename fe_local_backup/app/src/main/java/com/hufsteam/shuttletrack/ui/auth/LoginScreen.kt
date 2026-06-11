@@ -33,6 +33,7 @@ import com.hufsteam.shuttletrack.ui.common.LanguageButton
 import com.hufsteam.shuttletrack.ui.common.ShuttleButton
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
@@ -42,7 +43,8 @@ import androidx.compose.material3.IconButton
 fun LoginScreen(
     viewModel: AuthViewModel,
     onLoginSuccess: () -> Unit,
-    onGoSignUp: () -> Unit
+    onGoSignUp: () -> Unit,
+    onBack: () -> Unit
 ) {
     var email        by remember { mutableStateOf("") }
     var password     by remember { mutableStateOf("") }
@@ -56,6 +58,19 @@ fun LoginScreen(
             .background(Color.White)
             .statusBarsPadding()
     ) {
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(top = 8.dp, start = 8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "뒤로가기",
+                tint = Color.Black
+            )
+        }
+
         // 우측 상단 언어 버튼
         LanguageButton(modifier = Modifier
             .align(Alignment.TopEnd)
@@ -77,7 +92,7 @@ fun LoginScreen(
             OutlinedTextField(
                 value           = email,
                 onValueChange   = { email = it; viewModel.clearErrors() },
-                placeholder     = { Text("아이디를 입력해 주세요", color = Color(0xFFBBBBBB)) },
+                placeholder     = { Text("이메일을 입력해 주세요", color = Color(0xFFBBBBBB)) },
                 singleLine      = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 shape           = RoundedCornerShape(10.dp),

@@ -85,7 +85,7 @@ fun SignUpScreen(
             .background(Color.White)
             .statusBarsPadding()
     ) {
-        // 우측 상단 언어 버튼
+// 우측 상단 언어 버튼
         LanguageButton(
             modifier = Modifier
                 .align(Alignment.TopEnd)
@@ -110,7 +110,7 @@ fun SignUpScreen(
             OutlinedTextField(
                 value           = email,
                 onValueChange   = { email = it; viewModel.clearErrors() },
-                placeholder     = { Text("아이디를 입력해 주세요", color = Color(0xFFBBBBBB)) },
+                placeholder     = { Text("이메일을 입력해 주세요", color = Color(0xFFBBBBBB)) },
                 singleLine      = true,
                 isError         = viewModel.emailError != null,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),

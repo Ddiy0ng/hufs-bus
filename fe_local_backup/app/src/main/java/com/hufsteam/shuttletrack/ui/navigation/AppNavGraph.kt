@@ -55,7 +55,8 @@ fun AppNavGraph(
             LoginScreen(
                 viewModel      = authViewModel,
                 onLoginSuccess = { navigateByRole(navController, authViewModel.userRole) },
-                onGoSignUp     = { navController.navigate(Screen.SignUp.route) }
+                onGoSignUp     = { navController.navigate(Screen.SignUp.route) },
+                onBack         = { navController.popBackStack() }
             )
         }
 
@@ -68,7 +69,7 @@ fun AppNavGraph(
                     }
                 },
                 onGoServiceTerms = { navController.navigate(Screen.ServiceTerms.route) },
-                onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) }
+                onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) },
             )
         }
 
@@ -129,11 +130,9 @@ fun AppNavGraph(
         }
 
         composable(Screen.ServiceTerms.route) {
-            TermsScreen(type = TermsType.SERVICE, onBack = { navController.popBackStack() })
         }
 
         composable(Screen.PrivacyTerms.route) {
-            TermsScreen(type = TermsType.PRIVACY, onBack = { navController.popBackStack() })
         }
 
         composable(Screen.Timetable.route) { backStackEntry ->
@@ -148,12 +147,9 @@ fun AppNavGraph(
 }
 
 private fun navigateByRole(navController: NavController, role: UserRole?) {
-    val route = when (role) {
-        UserRole.DRIVER -> Screen.DriverMain.route
-        UserRole.ADMIN  -> Screen.AdminMain.route
-        else            -> Screen.StudentMain.route
+    navController.navigate(Screen.StudentMain.route) {
+        popUpTo(0) { inclusive = true }
     }
-    navController.navigate(route) { popUpTo(0) { inclusive = true } }
 }
 
 private fun doLogout(navController: NavController, viewModel: AuthViewModel) {
