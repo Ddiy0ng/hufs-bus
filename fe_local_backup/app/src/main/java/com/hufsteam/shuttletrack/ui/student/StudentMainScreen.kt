@@ -402,8 +402,8 @@ private fun StudentRouteStatusContent(
     val stops = routeDetail.stops
     val busProgressIndex = routeDetail.busProgressIndex.coerceIn(0f, stops.lastIndex.toFloat())
     val isCurvedRoute = stops.size >= 7
-    var selectedStopIndex by remember(schedule.id, routeDetail.currentStopIndex, stops) {
-        mutableStateOf<Int?>(stops.getOrNull(routeDetail.currentStopIndex)?.let { routeDetail.currentStopIndex })
+    var selectedStopIndex by remember(schedule.id, stops) {
+        mutableStateOf<Int?>(null)
     }
 
     Box(
