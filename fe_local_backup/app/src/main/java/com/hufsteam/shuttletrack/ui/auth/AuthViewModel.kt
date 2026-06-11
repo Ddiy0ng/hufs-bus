@@ -54,6 +54,15 @@ class AuthViewModel : ViewModel() {
             return
         }
 
+        // 개발 테스트용 기사 계정: 백엔드 role 연동 전 기사 UI 확인용
+        if (resolvedEmail.equals("driver@hufs.ac.kr", ignoreCase = true) && password == "driver1234") {
+            devLoginEmail = "driver@hufs.ac.kr"
+            userRole = UserRole.DRIVER
+            isLoading = false
+            onSuccess()
+            return
+        }
+
         isLoading = true
 
         // 10초 타임아웃
