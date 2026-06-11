@@ -159,7 +159,13 @@ fun AppNavGraph(
             TimetableScreen(
                 role          = role,
                 onGoMyPage    = { navController.popBackStack() },
-                onGoFavorites = {}
+                onGoFavorites = {},
+                onDriverScheduleClick = { route ->
+                    if (role == "driver" && authViewModel.userRole == UserRole.DRIVER) {
+                        driverViewModel.selectRoute(route)
+                        navController.navigate(Screen.DriverOperation.route)
+                    }
+                }
             )
         }
     }

@@ -71,10 +71,10 @@ class DriverViewModel : ViewModel() {
     var actualDepartureTime by mutableStateOf<String?>(null)
         private set
 
-    var currentStopIndex by mutableStateOf(0)
+    var isGpsTracking by mutableStateOf(false)
         private set
 
-    var busStatus by mutableStateOf(BusStatus.NORMAL)
+    var operationMessage by mutableStateOf("출발 전입니다")
         private set
 
     fun selectRoute(route: DriverRoute) {
@@ -86,35 +86,36 @@ class DriverViewModel : ViewModel() {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         actualDepartureTime = now
         operationState = OperationState.OPERATING
+        isGpsTracking = true
+        operationMessage = "GPS 위치와 좌석 수를 전송 중입니다"
     }
 
     fun endOperation() {
         operationState = OperationState.COMPLETED
+        isGpsTracking = false
+        operationMessage = "운행이 종료되어 GPS 전송이 중지되었습니다"
     }
 
     fun increasePassengers() {
         val total = selectedRoute?.totalSeats ?: 45
-        if (passengerCount < total) passengerCount++
+        if (operationState == OperationState.OPERATING && passengerCount < total) {
+            passengerCount++
+            operationMessage = "탑승 수가 수기로 반영되었습니다"
+        }
     }
 
     fun decreasePassengers() {
-        if (passengerCount > 0) passengerCount--
-    }
-
-    fun advanceStop() {
-        val maxStops = selectedRoute?.stops?.size ?: 0
-        if (currentStopIndex < maxStops - 1) currentStopIndex++
-    }
-
-    fun updateStatus(status: BusStatus) {
-        busStatus = status
+        if (operationState == OperationState.OPERATING && passengerCount > 0) {
+            passengerCount--
+            operationMessage = "하차 수가 수기로 반영되었습니다"
+        }
     }
 
     fun reset() {
         operationState      = OperationState.BEFORE_DEPARTURE
         passengerCount      = 0
         actualDepartureTime = null
-        currentStopIndex    = 0
-        busStatus           = BusStatus.NORMAL
+        isGpsTracking       = false
+        operationMessage    = "출발 전입니다"
     }
 }

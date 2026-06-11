@@ -8,7 +8,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,10 +37,8 @@ fun DriverOperationScreen(
     val total = route.totalSeats
     val remainingSeats = (total - passengers).coerceAtLeast(0)
     val actualTime = driverViewModel.actualDepartureTime
-    val currentStop = driverViewModel.currentStopIndex
-    val busStatus = driverViewModel.busStatus
-
-    var showStatusMenu by remember { mutableStateOf(false) }
+    val isGpsTracking = driverViewModel.isGpsTracking
+    val operationMessage = driverViewModel.operationMessage
 
     Column(
         modifier = Modifier
@@ -121,7 +118,8 @@ fun DriverOperationScreen(
                     BeforeDepartureContent(
                         passengers  = passengers,
                         total       = total,
-                        remainingSeats = remainingSeats
+                        remainingSeats = remainingSeats,
+                        message = operationMessage
                     )
                 }
 
@@ -131,19 +129,10 @@ fun DriverOperationScreen(
                         passengers       = passengers,
                         total            = total,
                         remainingSeats   = remainingSeats,
-                        stops            = route.stops,
-                        currentStopIndex = currentStop,
-                        busStatus        = busStatus,
-                        showStatusMenu   = showStatusMenu,
-                        onShowMenu       = { showStatusMenu = true },
-                        onDismissMenu    = { showStatusMenu = false },
-                        onStatusSelect   = { s ->
-                            driverViewModel.updateStatus(s)
-                            showStatusMenu = false
-                        },
+                        isGpsTracking    = isGpsTracking,
+                        message          = operationMessage,
                         onIncrease       = { driverViewModel.increasePassengers() },
-                        onDecrease       = { driverViewModel.decreasePassengers() },
-                        onAdvanceStop    = { driverViewModel.advanceStop() }
+                        onDecrease       = { driverViewModel.decreasePassengers() }
                     )
                 }
 
@@ -152,7 +141,8 @@ fun DriverOperationScreen(
                     CompletedContent(
                         passengers = passengers,
                         total = total,
-                        remainingSeats = remainingSeats
+                        remainingSeats = remainingSeats,
+                        message = operationMessage
                     )
                 }
             }
@@ -201,12 +191,19 @@ fun DriverOperationScreen(
 // ── 출발 전 콘텐츠 ─────────────────────────────────────────────
 
 @Composable
-private fun BeforeDepartureContent(passengers: Int, total: Int, remainingSeats: Int) {
+private fun BeforeDepartureContent(
+    passengers: Int,
+    total: Int,
+    remainingSeats: Int,
+    message: String
+) {
     SeatSummaryContent(
         passengers = passengers,
         total = total,
         remainingSeats = remainingSeats
     )
+    Spacer(Modifier.height(14.dp))
+    OperationStatePill(message = message, isActive = false)
 }
 
 // ── 운행 중 콘텐츠 ─────────────────────────────────────────────
@@ -216,61 +213,14 @@ private fun OperatingContent(
     passengers: Int,
     total: Int,
     remainingSeats: Int,
-    stops: List<String>,
-    currentStopIndex: Int,
-    busStatus: BusStatus,
-    showStatusMenu: Boolean,
-    onShowMenu: () -> Unit,
-    onDismissMenu: () -> Unit,
-    onStatusSelect: (BusStatus) -> Unit,
+    isGpsTracking: Boolean,
+    message: String,
     onIncrease: () -> Unit,
-    onDecrease: () -> Unit,
-    onAdvanceStop: () -> Unit
+    onDecrease: () -> Unit
 ) {
-    // 혼잡도 상태 배지
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        val (badgeColor, textColor) = when (busStatus) {
-            BusStatus.NORMAL    -> Color(0xFFE8F5E9) to Color(0xFF2E7D32)
-            BusStatus.DELAYED   -> Color(0xFFFFF3E0) to Color(0xFFE65100)
-            BusStatus.SUSPENDED -> Color(0xFFFFEBEE) to Color(0xFFC62828)
-        }
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50.dp))
-                .background(badgeColor)
-                .padding(horizontal = 12.dp, vertical = 4.dp)
-        ) {
-            Text(busStatus.label, color = textColor, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-        }
+    OperationStatePill(message = message, isActive = isGpsTracking)
 
-        // 상태 변경 버튼
-        Box {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(50.dp))
-                    .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(50.dp))
-                    .clickable { onShowMenu() }
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("상태 변경", fontSize = 13.sp, color = Color(0xFF555555))
-                Icon(Icons.Filled.KeyboardArrowDown, null, tint = Color(0xFF555555), modifier = Modifier.size(16.dp))
-            }
-            DropdownMenu(expanded = showStatusMenu, onDismissRequest = onDismissMenu) {
-                BusStatus.values().forEach { s ->
-                    DropdownMenuItem(
-                        text    = { Text(s.label) },
-                        onClick = { onStatusSelect(s) }
-                    )
-                }
-            }
-        }
-    }
-
-    Spacer(Modifier.height(22.dp))
+    Spacer(Modifier.height(18.dp))
 
     SeatSummaryContent(
         passengers = passengers,
@@ -285,39 +235,21 @@ private fun OperatingContent(
         onIncrease = onIncrease,
         onDecrease = onDecrease
     )
-
-    Spacer(Modifier.height(28.dp))
-
-    // ── 정류장 진행 바 ─────────────────────────────────────────
-    StopProgressBar(stops = stops, currentIndex = currentStopIndex)
-
-    Spacer(Modifier.height(16.dp))
-
-    // 정류장 출발 버튼 (마지막 정류장이 아닐 때만)
-    if (currentStopIndex < stops.size - 1) {
-        OutlinedButton(
-            onClick = onAdvanceStop,
-            shape   = RoundedCornerShape(8.dp),
-            colors  = ButtonDefaults.outlinedButtonColors(contentColor = NavyBlue),
-            border  = ButtonDefaults.outlinedButtonBorder,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("다음 정류장 출발 →", fontSize = 14.sp)
-        }
-    }
 }
 
 // ── 운행 완료 콘텐츠 ────────────────────────────────────────────
 
 @Composable
-private fun CompletedContent(passengers: Int, total: Int, remainingSeats: Int) {
+private fun CompletedContent(passengers: Int, total: Int, remainingSeats: Int, message: String) {
     Spacer(Modifier.height(16.dp))
     SeatSummaryContent(
         passengers = passengers,
         total = total,
         remainingSeats = remainingSeats
     )
-    Spacer(Modifier.height(24.dp))
+    Spacer(Modifier.height(18.dp))
+    OperationStatePill(message = message, isActive = false)
+    Spacer(Modifier.height(18.dp))
     Text(
         "운행이 완료되었습니다",
         fontSize  = 16.sp,
@@ -377,16 +309,16 @@ private fun PassengerStepper(
         horizontalArrangement = Arrangement.Center,
         modifier = Modifier.fillMaxWidth()
     ) {
-        SeatAdjustButton(text = "−", enabled = passengers > 0, filled = false, onClick = onDecrease)
+        SeatAdjustButton(text = "하차 -", enabled = passengers > 0, filled = false, onClick = onDecrease)
         Spacer(Modifier.width(14.dp))
         Text(
-            "탑승 인원 조절",
+            "수기 집계",
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             color = Color(0xFF666666)
         )
         Spacer(Modifier.width(14.dp))
-        SeatAdjustButton(text = "+", enabled = passengers < total, filled = true, onClick = onIncrease)
+        SeatAdjustButton(text = "탑승 +", enabled = passengers < total, filled = true, onClick = onIncrease)
     }
 }
 
@@ -409,14 +341,34 @@ private fun SeatAdjustButton(
     }
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .width(74.dp)
+            .height(34.dp)
             .clip(CircleShape)
             .background(background)
             .border(1.2.dp, if (filled || !enabled) background else NavyBlue, CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = foreground)
+        Text(text, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = foreground)
+    }
+}
+
+@Composable
+private fun OperationStatePill(message: String, isActive: Boolean) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50.dp))
+            .background(if (isActive) Color(0xFFEAF3FF) else DriverSoftGray)
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            message,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = if (isActive) NavyBlue else Color(0xFF777777),
+            textAlign = TextAlign.Center
+        )
     }
 }
 
