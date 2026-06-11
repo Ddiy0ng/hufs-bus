@@ -82,6 +82,11 @@ class DriverViewModel : ViewModel() {
         reset()
     }
 
+    fun clearSelectedRoute() {
+        selectedRoute = null
+        reset()
+    }
+
     fun startOperation() {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         actualDepartureTime = now

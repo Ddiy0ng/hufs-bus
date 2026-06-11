@@ -1506,6 +1506,26 @@ private fun AdminPassengerControlSection(
                     color = Color(0xFF999999)
                 )
             }
+
+            Spacer(Modifier.height(12.dp))
+            AdminPassengerButton(
+                text = "운행 다시 선택",
+                enabled = !isOperating,
+                filled = false,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    driverViewModel.clearSelectedRoute()
+                    onNotice("수기 집계 대상을 다시 선택할 수 있습니다")
+                }
+            )
+            if (isOperating) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "운행 중에는 집계 대상 변경을 할 수 없습니다.",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999)
+                )
+            }
         }
     }
 }
