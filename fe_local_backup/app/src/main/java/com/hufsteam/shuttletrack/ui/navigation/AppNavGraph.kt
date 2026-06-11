@@ -1,6 +1,7 @@
 package com.hufsteam.shuttletrack.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
@@ -101,10 +102,16 @@ fun AppNavGraph(
         }
 
         composable(Screen.DriverOperation.route) {
-            DriverOperationScreen(
-                driverViewModel = driverViewModel,
-                onBack          = { navController.popBackStack() }
-            )
+            if (authViewModel.userRole != UserRole.DRIVER) {
+                LaunchedEffect(authViewModel.userRole) {
+                    navController.popBackStack()
+                }
+            } else {
+                DriverOperationScreen(
+                    driverViewModel = driverViewModel,
+                    onBack          = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(Screen.AdminMain.route) {

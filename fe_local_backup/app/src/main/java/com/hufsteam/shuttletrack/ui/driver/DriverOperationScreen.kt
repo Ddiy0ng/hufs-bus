@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.sp
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 
+private val DriverAccentRed = Color(0xFFB83A25)
+private val DriverSoftGray = Color(0xFFF4F6F8)
+
 // ── 메인 화면 ─────────────────────────────────────────────────
 
 @Composable
@@ -33,6 +36,7 @@ fun DriverOperationScreen(
     val state = driverViewModel.operationState
     val passengers = driverViewModel.passengerCount
     val total = route.totalSeats
+    val remainingSeats = (total - passengers).coerceAtLeast(0)
     val actualTime = driverViewModel.actualDepartureTime
     val currentStop = driverViewModel.currentStopIndex
     val busStatus = driverViewModel.busStatus
@@ -52,7 +56,7 @@ fun DriverOperationScreen(
                 .padding(horizontal = 16.dp, vertical = 14.dp)
         ) {
             Icon(
-                Icons.Filled.ArrowBack,
+                Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = "뒤로가기",
                 tint     = Color.Black,
                 modifier = Modifier
@@ -78,7 +82,7 @@ fun DriverOperationScreen(
             Spacer(Modifier.height(24.dp))
 
             // ── 버스 아이콘 ────────────────────────────────────
-            BusIcon(size = 72.dp)
+            BusIcon(size = 58.dp)
 
             Spacer(Modifier.height(20.dp))
 
@@ -86,9 +90,11 @@ fun DriverOperationScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(31.dp)
                     .clip(RoundedCornerShape(50.dp))
-                    .border(1.dp, Color(0xFFDDDDDD), RoundedCornerShape(50.dp))
-                    .padding(horizontal = 20.dp, vertical = 10.dp)
+                    .border(1.4.dp, Color(0xFFD8DEE8), RoundedCornerShape(50.dp))
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.Center
             ) {
                 Row(
                     modifier            = Modifier.fillMaxWidth(),
@@ -96,12 +102,12 @@ fun DriverOperationScreen(
                 ) {
                     Text(
                         "출발 계획 | ${route.scheduledTime}",
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color    = Color(0xFF444444)
                     )
                     Text(
                         "실제 출발 | ${actualTime ?: "미정"}",
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         color    = Color(0xFF444444)
                     )
                 }
@@ -114,7 +120,8 @@ fun DriverOperationScreen(
                 OperationState.BEFORE_DEPARTURE -> {
                     BeforeDepartureContent(
                         passengers  = passengers,
-                        total       = total
+                        total       = total,
+                        remainingSeats = remainingSeats
                     )
                 }
 
@@ -123,6 +130,7 @@ fun DriverOperationScreen(
                     OperatingContent(
                         passengers       = passengers,
                         total            = total,
+                        remainingSeats   = remainingSeats,
                         stops            = route.stops,
                         currentStopIndex = currentStop,
                         busStatus        = busStatus,
@@ -141,13 +149,22 @@ fun DriverOperationScreen(
 
                 // ── 운행 완료 ──────────────────────────────────
                 OperationState.COMPLETED -> {
-                    CompletedContent()
+                    CompletedContent(
+                        passengers = passengers,
+                        total = total,
+                        remainingSeats = remainingSeats
+                    )
                 }
             }
         }
 
         // ── 하단 버튼 ──────────────────────────────────────────
-        Box(modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+            contentAlignment = Alignment.Center
+        ) {
             when (state) {
                 OperationState.BEFORE_DEPARTURE -> {
                     OperationButton(
@@ -184,19 +201,11 @@ fun DriverOperationScreen(
 // ── 출발 전 콘텐츠 ─────────────────────────────────────────────
 
 @Composable
-private fun BeforeDepartureContent(passengers: Int, total: Int) {
-    Text(
-        "탑승 수",
-        fontSize   = 18.sp,
-        fontWeight = FontWeight.Bold,
-        color      = Color(0xFFCC2200)
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        "${passengers.toString().padStart(2, '0')}/$total",
-        fontSize   = 52.sp,
-        fontWeight = FontWeight.Bold,
-        color      = Color(0xFFCC2200)
+private fun BeforeDepartureContent(passengers: Int, total: Int, remainingSeats: Int) {
+    SeatSummaryContent(
+        passengers = passengers,
+        total = total,
+        remainingSeats = remainingSeats
     )
 }
 
@@ -206,6 +215,7 @@ private fun BeforeDepartureContent(passengers: Int, total: Int) {
 private fun OperatingContent(
     passengers: Int,
     total: Int,
+    remainingSeats: Int,
     stops: List<String>,
     currentStopIndex: Int,
     busStatus: BusStatus,
@@ -260,52 +270,21 @@ private fun OperatingContent(
         }
     }
 
-    Spacer(Modifier.height(16.dp))
+    Spacer(Modifier.height(22.dp))
 
-    // 탑승 수 조절
-    Text(
-        "탑승 수",
-        fontSize   = 18.sp,
-        fontWeight = FontWeight.Bold,
-        color      = Color(0xFFCC2200)
+    SeatSummaryContent(
+        passengers = passengers,
+        total = total,
+        remainingSeats = remainingSeats
     )
-    Spacer(Modifier.height(8.dp))
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // - 버튼
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .border(1.dp, Color(0xFFDDDDDD), CircleShape)
-                .clickable { onDecrease() },
-            contentAlignment = Alignment.Center
-        ) {
-            Text("−", fontSize = 22.sp, color = Color(0xFF555555), textAlign = TextAlign.Center)
-        }
-        Spacer(Modifier.width(20.dp))
-        Text(
-            "$passengers/$total",
-            fontSize   = 48.sp,
-            fontWeight = FontWeight.Bold,
-            color      = Color(0xFFCC2200)
-        )
-        Spacer(Modifier.width(20.dp))
-        // + 버튼
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(NavyBlue)
-                .clickable { onIncrease() },
-            contentAlignment = Alignment.Center
-        ) {
-            Text("+", fontSize = 22.sp, color = Color.White, textAlign = TextAlign.Center)
-        }
-    }
+
+    Spacer(Modifier.height(18.dp))
+    PassengerStepper(
+        passengers = passengers,
+        total = total,
+        onIncrease = onIncrease,
+        onDecrease = onDecrease
+    )
 
     Spacer(Modifier.height(28.dp))
 
@@ -331,14 +310,114 @@ private fun OperatingContent(
 // ── 운행 완료 콘텐츠 ────────────────────────────────────────────
 
 @Composable
-private fun CompletedContent() {
-    Spacer(Modifier.height(60.dp))
+private fun CompletedContent(passengers: Int, total: Int, remainingSeats: Int) {
+    Spacer(Modifier.height(16.dp))
+    SeatSummaryContent(
+        passengers = passengers,
+        total = total,
+        remainingSeats = remainingSeats
+    )
+    Spacer(Modifier.height(24.dp))
     Text(
         "운행이 완료되었습니다",
         fontSize  = 16.sp,
         color     = Color(0xFF888888),
         textAlign = TextAlign.Center
     )
+}
+
+@Composable
+private fun SeatSummaryContent(
+    passengers: Int,
+    total: Int,
+    remainingSeats: Int
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "탑승 수",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = DriverAccentRed
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "${passengers.toString().padStart(2, '0')}/$total",
+            fontSize = 48.sp,
+            fontWeight = FontWeight.Bold,
+            color = DriverAccentRed,
+            lineHeight = 48.sp
+        )
+        Spacer(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50.dp))
+                .background(DriverSoftGray)
+                .padding(horizontal = 18.dp, vertical = 7.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "남은 여석 ${remainingSeats}석",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = NavyBlue
+            )
+        }
+    }
+}
+
+@Composable
+private fun PassengerStepper(
+    passengers: Int,
+    total: Int,
+    onIncrease: () -> Unit,
+    onDecrease: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        SeatAdjustButton(text = "−", enabled = passengers > 0, filled = false, onClick = onDecrease)
+        Spacer(Modifier.width(14.dp))
+        Text(
+            "탑승 인원 조절",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = Color(0xFF666666)
+        )
+        Spacer(Modifier.width(14.dp))
+        SeatAdjustButton(text = "+", enabled = passengers < total, filled = true, onClick = onIncrease)
+    }
+}
+
+@Composable
+private fun SeatAdjustButton(
+    text: String,
+    enabled: Boolean,
+    filled: Boolean,
+    onClick: () -> Unit
+) {
+    val background = when {
+        !enabled -> Color(0xFFE6E8EC)
+        filled -> NavyBlue
+        else -> Color.White
+    }
+    val foreground = when {
+        !enabled -> Color(0xFF9AA1AB)
+        filled -> Color.White
+        else -> NavyBlue
+    }
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(background)
+            .border(1.2.dp, if (filled || !enabled) background else NavyBlue, CircleShape)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = foreground)
+    }
 }
 
 // ── 정류장 진행 바 ─────────────────────────────────────────────
@@ -421,20 +500,20 @@ private fun OperationButton(text: String, enabled: Boolean, onClick: () -> Unit)
     Button(
         onClick  = onClick,
         enabled  = enabled,
-        shape    = RoundedCornerShape(12.dp),
+        shape    = RoundedCornerShape(7.dp),
         colors   = ButtonDefaults.buttonColors(
             containerColor         = NavyBlue,
-            disabledContainerColor = Color(0xFFCCCCCC)
+            disabledContainerColor = Color(0xFFF0F1F3)
         ),
         modifier = Modifier
-            .fillMaxWidth()
-            .height(52.dp)
+            .width(150.dp)
+            .height(36.dp)
     ) {
         Text(
             text,
-            fontSize   = 16.sp,
+            fontSize   = 12.sp,
             fontWeight = FontWeight.SemiBold,
-            color      = Color.White
+            color      = if (enabled) Color.White else Color(0xFF9AA1AB)
         )
     }
 }
