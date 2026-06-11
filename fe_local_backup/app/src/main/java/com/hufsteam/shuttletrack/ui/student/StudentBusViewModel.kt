@@ -13,6 +13,7 @@ import java.net.URLEncoder
 
 private const val OFF_CAMPUS = 1
 private const val ON_CAMPUS = 0
+private const val FIXED_TOTAL_SEATS = 45
 
 data class StopArrivalInfo(
     val stopName: String,
@@ -104,10 +105,10 @@ class StudentBusRepository(
     private val apiClient: ShuttleApiClient = ShuttleApiClient
 ) {
     suspend fun loadSchedules(): ScheduleLoadResult {
-        val off = apiClient.getArray("/api/timetables?campus=OFF_CAMPUS")
-            ?: apiClient.getArray("/api/schedules?campus=OFF_CAMPUS")
-        val on = apiClient.getArray("/api/timetables?campus=ON_CAMPUS")
-            ?: apiClient.getArray("/api/schedules?campus=ON_CAMPUS")
+        val off = loadScheduleArray("/api/timetables?campus=OFF_CAMPUS")
+            ?: loadScheduleArray("/api/schedules?campus=OFF_CAMPUS")
+        val on = loadScheduleArray("/api/timetables?campus=ON_CAMPUS")
+            ?: loadScheduleArray("/api/schedules?campus=ON_CAMPUS")
 
         val offSchedules = off?.toSchedules() ?: mockOffCampusSchedules
         val onSchedules = on?.toSchedules() ?: mockOnCampusSchedules
@@ -124,7 +125,8 @@ class StudentBusRepository(
     suspend fun loadRouteDetail(schedule: BusSchedule): RouteDetail {
         val encodedRoute = URLEncoder.encode(schedule.routeName, "UTF-8")
         val response = apiClient.getObject("/api/routes/$encodedRoute/status?scheduleId=${schedule.id}")
-            ?: apiClient.getObject("/api/bus/status?scheduleId=${schedule.id}")
+            ?.payloadObject()
+            ?: apiClient.getObject("/api/bus/status?scheduleId=${schedule.id}")?.payloadObject()
         return response?.toRouteDetail(schedule) ?: mockRouteDetailFor(schedule)
     }
 
@@ -139,6 +141,26 @@ class StudentBusRepository(
             || apiClient.postObject("/api/notifications/favorites", body)
     }
 
+    private suspend fun loadScheduleArray(path: String): JSONArray? {
+        return apiClient.getArray(path) ?: apiClient.getObject(path)?.payloadArray()
+    }
+
+    private fun JSONObject.payloadArray(): JSONArray? {
+        return optJSONArray("data")
+            ?: optJSONArray("items")
+            ?: optJSONArray("schedules")
+            ?: optJSONArray("timetables")
+            ?: optJSONArray("content")
+            ?: optJSONObject("data")?.payloadArray()
+    }
+
+    private fun JSONObject.payloadObject(): JSONObject {
+        return optJSONObject("data")
+            ?: optJSONObject("item")
+            ?: optJSONObject("result")
+            ?: this
+    }
+
     private fun JSONArray.toSchedules(): List<BusSchedule> = buildList {
         for (index in 0 until length()) {
             val item = optJSONObject(index) ?: continue
@@ -148,27 +170,32 @@ class StudentBusRepository(
 
     private fun JSONObject.toSchedule(index: Int): BusSchedule {
         val routeName = optStringFlexible("routeName", "route", "name", default = "노선")
+        val remainingSeats = optIntFlexible("remainingSeats", "availableSeats", "seatLeft", default = FIXED_TOTAL_SEATS)
+            .coerceIn(0, FIXED_TOTAL_SEATS)
         return BusSchedule(
             id = optIntFlexible("id", "scheduleId", "timetableId", default = index + 1),
             routeName = routeName,
             departureTime = optStringFlexible("departureTime", "time", "plannedDeparture", default = "00:00"),
-            remainingSeats = optIntFlexible("remainingSeats", "availableSeats", "seatLeft", default = 45),
-            totalSeats = optIntFlexible("totalSeats", "capacity", default = 45),
+            remainingSeats = remainingSeats,
+            totalSeats = FIXED_TOTAL_SEATS,
             currentLocation = optStringFlexible("currentLocation", "location", "currentStop", default = "위치 확인 중입니다")
         )
     }
 
     private fun JSONObject.toRouteDetail(schedule: BusSchedule): RouteDetail {
         val stopsJson = optJSONArray("stops") ?: optJSONArray("stopNames")
-        val stops = stopsJson?.toStopNames().orEmpty().ifEmpty { mockRouteDetailFor(schedule).stops }
+        val stopPoints = stopsJson?.toStopPoints().orEmpty()
+        val stops = stopPoints.map { it.name }.ifEmpty { mockRouteDetailFor(schedule).stops }
         val currentIndex = optIntFlexible("currentStopIndex", "busStopIndex", "currentIndex", default = (stops.lastIndex - 1).coerceAtLeast(0))
-        val progressIndex = optFloatFlexible(
+        val busLatitude = optDoubleFlexibleOrNull("busLatitude", "busLat", "vehicleLatitude", "latitude", "lat")
+        val busLongitude = optDoubleFlexibleOrNull("busLongitude", "busLng", "vehicleLongitude", "longitude", "lng")
+        val coordinateProgress = estimateProgressFromCoordinates(stopPoints, busLatitude, busLongitude)
+        val progressIndex = optFloatFlexibleOrNull(
             "busProgressIndex",
             "currentProgressIndex",
             "routeProgressIndex",
-            "progressIndex",
-            default = currentIndex.toFloat()
-        )
+            "progressIndex"
+        ) ?: coordinateProgress ?: currentIndex.toFloat()
         val planned = optStringFlexible("plannedDeparture", "departureTime", default = schedule.departureTime)
         val actual = optStringFlexible("actualDeparture", "actualTime", default = "미정")
         val eta = optStringFlexible("etaText", "estimatedMinutes", "etaMinutes", default = "03분")
@@ -183,14 +210,55 @@ class StudentBusRepository(
         return RouteDetail(stops, currentIndex.coerceIn(0, stops.lastIndex), progressIndex.coerceIn(0f, stops.lastIndex.toFloat()), planned, actual, eta, infos)
     }
 
-    private fun JSONArray.toStopNames(): List<String> = buildList {
+    private fun JSONArray.toStopPoints(): List<RouteStopPoint> = buildList {
         for (index in 0 until length()) {
             val value = opt(index)
             when (value) {
-                is String -> add(value)
-                is JSONObject -> add(value.optStringFlexible("name", "stopName", default = "정류장${index + 1}"))
+                is String -> add(RouteStopPoint(value, null, null))
+                is JSONObject -> add(
+                    RouteStopPoint(
+                        name = value.optStringFlexible("name", "stopName", default = "정류장${index + 1}"),
+                        latitude = value.optDoubleFlexibleOrNull("latitude", "lat", "stopLatitude", "stopLat"),
+                        longitude = value.optDoubleFlexibleOrNull("longitude", "lng", "stopLongitude", "stopLng")
+                    )
+                )
             }
         }
+    }
+
+    private fun estimateProgressFromCoordinates(
+        stopPoints: List<RouteStopPoint>,
+        busLatitude: Double?,
+        busLongitude: Double?
+    ): Float? {
+        if (busLatitude == null || busLongitude == null) return null
+        val points = stopPoints.mapIndexedNotNull { index, point ->
+            val lat = point.latitude
+            val lng = point.longitude
+            if (lat == null || lng == null) null else IndexedStopPoint(index, lat, lng)
+        }
+        if (points.size < 2) return null
+
+        var bestProgress = points.first().index.toFloat()
+        var bestDistance = Double.MAX_VALUE
+        points.zipWithNext().forEach { (start, end) ->
+            val vx = end.longitude - start.longitude
+            val vy = end.latitude - start.latitude
+            val wx = busLongitude - start.longitude
+            val wy = busLatitude - start.latitude
+            val segmentLength = vx * vx + vy * vy
+            val t = if (segmentLength == 0.0) 0.0 else ((wx * vx + wy * vy) / segmentLength).coerceIn(0.0, 1.0)
+            val projectedLng = start.longitude + t * vx
+            val projectedLat = start.latitude + t * vy
+            val dx = busLongitude - projectedLng
+            val dy = busLatitude - projectedLat
+            val distance = dx * dx + dy * dy
+            if (distance < bestDistance) {
+                bestDistance = distance
+                bestProgress = (start.index + (end.index - start.index) * t).toFloat()
+            }
+        }
+        return bestProgress.coerceIn(0f, stopPoints.lastIndex.toFloat())
     }
 
     private fun JSONObject.optStringFlexible(vararg keys: String, default: String): String {
@@ -207,25 +275,44 @@ class StudentBusRepository(
         return default
     }
 
-    private fun JSONObject.optFloatFlexible(vararg keys: String, default: Float): Float {
+    private fun JSONObject.optFloatFlexibleOrNull(vararg keys: String): Float? {
         keys.forEach { key ->
-            if (has(key) && !isNull(key)) return optString(key).toFloatOrNull() ?: default
+            if (has(key) && !isNull(key)) return optString(key).toFloatOrNull()
         }
-        return default
+        return null
+    }
+
+    private fun JSONObject.optDoubleFlexibleOrNull(vararg keys: String): Double? {
+        keys.forEach { key ->
+            if (has(key) && !isNull(key)) return optString(key).toDoubleOrNull()
+        }
+        return null
     }
 }
 
+private data class RouteStopPoint(
+    val name: String,
+    val latitude: Double?,
+    val longitude: Double?
+)
+
+private data class IndexedStopPoint(
+    val index: Int,
+    val latitude: Double,
+    val longitude: Double
+)
+
 val mockOffCampusSchedules = listOf(
     BusSchedule(1, "경기광주역 → 외대(글)", "08:20", 8, 45, "법학관을 지나고 있습니다"),
-    BusSchedule(2, "경기광주역 → 외대(글)", "08:30", 48, 48, "위치 확인 중입니다"),
+    BusSchedule(2, "경기광주역 → 외대(글)", "08:30", 45, 45, "위치 확인 중입니다"),
     BusSchedule(3, "경기광주역 → 외대(글)", "08:40", 44, 45, "내리실 정거장에 접근 중입니다"),
     BusSchedule(4, "경기광주역 → 외대(글)", "08:50", 42, 45, "인문경상관 근처입니다"),
     BusSchedule(9, "외대(글) → 경기광주역", "10:30", 36, 45, "후생관 근처입니다")
 )
 
 val mockOnCampusSchedules = listOf(
-    BusSchedule(5, "지석묘 → 인문경상관", "09:20", 8, 40, "지석묘 출발"),
-    BusSchedule(6, "지석묘 → 인문경상관", "09:30", 48, 48, "위치입니다"),
+    BusSchedule(5, "지석묘 → 인문경상관", "09:20", 8, 45, "지석묘 출발"),
+    BusSchedule(6, "지석묘 → 인문경상관", "09:30", 45, 45, "위치입니다"),
     BusSchedule(7, "지석묘 → 인문경상관", "09:40", 44, 45, "도서관 근처입니다"),
     BusSchedule(8, "지석묘 → 인문경상관", "09:50", 42, 45, "인문경상관 근처입니다")
 )

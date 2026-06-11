@@ -93,10 +93,14 @@ data class FavoriteSchedule(
 private data class AdminUploadFile(
     val uri: Uri,
     val name: String,
-    val sizeLabel: String
+    val sizeLabel: String,
+    val sizeBytes: Long,
+    val mimeType: String?
 )
 
 private val notificationDays = listOf("월요일", "화요일", "수요일", "목요일", "금요일")
+private const val FIXED_TOTAL_SEATS = 45
+private const val MAX_ADMIN_UPLOAD_BYTES = 10L * 1024L * 1024L
 
 private val ShuttleRegularTextStyle = TextStyle(
     fontFamily = FontFamily.SansSerif,
@@ -145,14 +149,23 @@ fun StudentMainScreen(
     studentBusViewModel: StudentBusViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val studentUiState = studentBusViewModel.uiState
-    val favoriteSchedules = studentUiState.favoriteSchedules
+    val baseOffCampusSchedules = studentUiState.offCampusSchedules.ifEmpty { offCampusSchedules }
+    val baseOnCampusSchedules = studentUiState.onCampusSchedules.ifEmpty { onCampusSchedules }
+    val liveOffCampusSchedules = baseOffCampusSchedules.withLivePassengerState(driverViewModel)
+    val liveOnCampusSchedules = baseOnCampusSchedules.withLivePassengerState(driverViewModel)
+    val favoriteSchedules = studentUiState.favoriteSchedules.map { favorite ->
+        favorite.copy(schedule = favorite.schedule.withLivePassengerState(driverViewModel))
+    }
     var currentScreen by remember { mutableStateOf(StudentScreen.TIMETABLE) }
     var selectedTab by remember { mutableStateOf(StudentTab.TIMETABLE) }
-    var selectedSchedule by remember { mutableStateOf((studentUiState.offCampusSchedules.ifEmpty { offCampusSchedules }).first()) }
+    var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.first()) }
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
+    val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
+    val liveRouteDetail = (studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule))
+        .withSeatText(liveSelectedSchedule)
 
-    LaunchedEffect(studentUiState.offCampusSchedules, studentUiState.onCampusSchedules) {
-        val allSchedules = studentUiState.offCampusSchedules + studentUiState.onCampusSchedules
+    LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
+        val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
         if (allSchedules.isNotEmpty() && allSchedules.none { it.id == selectedSchedule.id }) {
             selectedSchedule = allSchedules.first()
         }
@@ -176,8 +189,8 @@ fun StudentMainScreen(
         Box(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
                 StudentScreen.TIMETABLE -> StudentTimetableContent(
-                    offCampusSchedules = studentUiState.offCampusSchedules.ifEmpty { offCampusSchedules },
-                    onCampusSchedules = studentUiState.onCampusSchedules.ifEmpty { onCampusSchedules },
+                    offCampusSchedules = liveOffCampusSchedules,
+                    onCampusSchedules = liveOnCampusSchedules,
                     isLoading = studentUiState.isLoading,
                     errorMessage = studentUiState.errorMessage,
                     onScheduleClick = {
@@ -188,14 +201,14 @@ fun StudentMainScreen(
                 )
 
                 StudentScreen.ROUTE_STATUS -> StudentRouteStatusContent(
-                    schedule = selectedSchedule,
-                    routeDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(selectedSchedule),
-                    isFavorite = favoriteSchedules.any { it.schedule.id == selectedSchedule.id },
+                    schedule = liveSelectedSchedule,
+                    routeDetail = liveRouteDetail,
+                    isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
                     onBackClick = {
                         currentScreen = StudentScreen.TIMETABLE
                         selectedTab = StudentTab.TIMETABLE
                     },
-                    onFavoriteClick = { favoriteTarget = selectedSchedule }
+                    onFavoriteClick = { favoriteTarget = liveSelectedSchedule }
                 )
 
                 StudentScreen.FAVORITES -> StudentFavoritesContent(
@@ -234,6 +247,38 @@ fun StudentMainScreen(
             }
         }
     }
+}
+
+private fun List<BusSchedule>.withLivePassengerState(driverViewModel: DriverViewModel): List<BusSchedule> {
+    return map { it.withLivePassengerState(driverViewModel) }
+}
+
+private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel): BusSchedule {
+    val normalized = copy(
+        totalSeats = FIXED_TOTAL_SEATS,
+        remainingSeats = remainingSeats.coerceIn(0, FIXED_TOTAL_SEATS)
+    )
+    val route = driverViewModel.selectedRoute ?: return normalized
+    if (route.routeName != routeName || route.scheduledTime != departureTime) return normalized
+
+    val currentPassengers = driverViewModel.passengerCount.coerceIn(0, FIXED_TOTAL_SEATS)
+    val liveLocation = when (driverViewModel.operationState) {
+        OperationState.BEFORE_DEPARTURE -> "출발 전입니다"
+        OperationState.OPERATING -> "운행 중입니다"
+        OperationState.COMPLETED -> "운행이 종료되었습니다"
+    }
+    return normalized.copy(
+        remainingSeats = (FIXED_TOTAL_SEATS - currentPassengers).coerceIn(0, FIXED_TOTAL_SEATS),
+        currentLocation = liveLocation
+    )
+}
+
+private fun RouteDetail.withSeatText(schedule: BusSchedule): RouteDetail {
+    val seatText = "${schedule.remainingSeats.toString().padStart(2, '0')}석"
+    return copy(
+        plannedDeparture = schedule.departureTime,
+        stopInfos = stopInfos.mapValues { (_, info) -> info.copy(seatText = seatText) }
+    )
 }
 
 // ── 시간표 화면 ─────────────────────────────────────────────────
@@ -308,7 +353,7 @@ private fun StudentTimetableContent(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(selectedRoute, fontSize = 14.sp, color = Color(0xFF333333))
+                        Text(selectedRoute.ifBlank { "노선 정보 없음" }, fontSize = 14.sp, color = Color(0xFF333333))
                         Text(if (dropdownOpen) "⌃" else "⌄", fontSize = 16.sp, color = Color.Gray)
                     }
                 }
@@ -360,15 +405,32 @@ private fun StudentTimetableContent(
             val hourSchedules = routeSchedules.filter { it.departureTime.substringBefore(":").toIntOrNull() == selectedHour }
             val visibleSchedules = hourSchedules.ifEmpty { routeSchedules }
 
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(visibleSchedules) { schedule ->
-                    StudentTimetableCard(schedule = schedule, onClick = { onScheduleClick(schedule) })
+            if (visibleSchedules.isEmpty()) {
+                EmptyStateMessage("해당 시간대 운행 정보가 없습니다.")
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(visibleSchedules) { schedule ->
+                        StudentTimetableCard(schedule = schedule, onClick = { onScheduleClick(schedule) })
+                    }
+                    item { Spacer(Modifier.height(8.dp)) }
                 }
-                item { Spacer(Modifier.height(8.dp)) }
             }
         }
     }
 }
+
+@Composable
+private fun EmptyStateMessage(message: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 44.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(message, fontSize = 14.sp, color = Color(0xFF999999), textAlign = TextAlign.Center)
+    }
+}
+
 @Composable
 private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
     Card(
@@ -993,20 +1055,35 @@ private fun StudentMyPageContent(
     val timetableFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         persistReadPermission(context, uri)
-        adminFile = resolveAdminUploadFile(context, uri, fallbackName = "시간표 파일")
-        adminUploaded = false
+        val file = resolveAdminUploadFile(context, uri, fallbackName = "시간표 파일")
+        if (!file.isWithinUploadLimit()) {
+            noticeMessage = "파일은 최대 10MB 이하만 등록할 수 있습니다"
+        } else {
+            adminFile = file
+            adminUploaded = false
+        }
     }
     val privacyPdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         persistReadPermission(context, uri)
-        privacyPdfFile = resolveAdminUploadFile(context, uri, fallbackName = "개인정보 처리 방침.pdf")
-        privacyPdfUploaded = false
+        val file = resolveAdminUploadFile(context, uri, fallbackName = "개인정보 처리 방침.pdf")
+        if (!file.isValidPdfUpload()) {
+            noticeMessage = "PDF 파일만 10MB 이하로 등록할 수 있습니다"
+        } else {
+            privacyPdfFile = file
+            privacyPdfUploaded = false
+        }
     }
     val serviceTermsPdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         persistReadPermission(context, uri)
-        serviceTermsPdfFile = resolveAdminUploadFile(context, uri, fallbackName = "서비스 이용 약관.pdf")
-        serviceTermsPdfUploaded = false
+        val file = resolveAdminUploadFile(context, uri, fallbackName = "서비스 이용 약관.pdf")
+        if (!file.isValidPdfUpload()) {
+            noticeMessage = "PDF 파일만 10MB 이하로 등록할 수 있습니다"
+        } else {
+            serviceTermsPdfFile = file
+            serviceTermsPdfUploaded = false
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -1049,7 +1126,12 @@ private fun StudentMyPageContent(
                                 adminUploaded = false
                             },
                             onSubmit = {
-                                if (adminUploaded) {
+                                val file = adminFile
+                                if (file == null) {
+                                    noticeMessage = "등록할 시간표 파일을 먼저 선택해 주세요"
+                                } else if (!file.isWithinUploadLimit()) {
+                                    noticeMessage = "파일은 최대 10MB 이하만 등록할 수 있습니다"
+                                } else if (adminUploaded) {
                                     adminUploaded = false
                                     noticeMessage = "시간표 파일을 다시 수정할 수 있습니다"
                                 } else {
@@ -1111,8 +1193,13 @@ private fun StudentMyPageContent(
                             privacyPdfUploaded = false
                         },
                         onSubmit = {
-                            privacyPdfUploaded = true
-                            noticeMessage = "개인정보 처리 방침 PDF가 저장되었습니다"
+                            val file = privacyPdfFile
+                            if (file?.isValidPdfUpload() == true) {
+                                privacyPdfUploaded = true
+                                noticeMessage = "개인정보 처리 방침 PDF가 저장되었습니다"
+                            } else {
+                                noticeMessage = "PDF 파일만 10MB 이하로 등록할 수 있습니다"
+                            }
                         }
                     )
                     Spacer(Modifier.height(14.dp))
@@ -1126,8 +1213,13 @@ private fun StudentMyPageContent(
                             serviceTermsPdfUploaded = false
                         },
                         onSubmit = {
-                            serviceTermsPdfUploaded = true
-                            noticeMessage = "서비스 이용 약관 PDF가 저장되었습니다"
+                            val file = serviceTermsPdfFile
+                            if (file?.isValidPdfUpload() == true) {
+                                serviceTermsPdfUploaded = true
+                                noticeMessage = "서비스 이용 약관 PDF가 저장되었습니다"
+                            } else {
+                                noticeMessage = "PDF 파일만 10MB 이하로 등록할 수 있습니다"
+                            }
                         }
                     )
                 } else {
@@ -1355,6 +1447,7 @@ private fun persistReadPermission(context: Context, uri: Uri) {
 private fun resolveAdminUploadFile(context: Context, uri: Uri, fallbackName: String): AdminUploadFile {
     var fileName = uri.lastPathSegment?.substringAfterLast('/') ?: fallbackName
     var fileSize = -1L
+    val mimeType = context.contentResolver.getType(uri)
 
     context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
         val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -1368,8 +1461,19 @@ private fun resolveAdminUploadFile(context: Context, uri: Uri, fallbackName: Str
     return AdminUploadFile(
         uri = uri,
         name = fileName,
-        sizeLabel = formatAdminFileSize(fileSize)
+        sizeLabel = formatAdminFileSize(fileSize),
+        sizeBytes = fileSize,
+        mimeType = mimeType
     )
+}
+
+private fun AdminUploadFile.isWithinUploadLimit(): Boolean {
+    return sizeBytes in 1..MAX_ADMIN_UPLOAD_BYTES
+}
+
+private fun AdminUploadFile.isValidPdfUpload(): Boolean {
+    val looksLikePdf = mimeType == "application/pdf" || name.endsWith(".pdf", ignoreCase = true)
+    return looksLikePdf && isWithinUploadLimit()
 }
 
 private fun formatAdminFileSize(bytes: Long): String {
