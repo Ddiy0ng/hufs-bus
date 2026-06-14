@@ -478,7 +478,7 @@ private fun StudentRouteStatusContent(
 ) {
     val stops = routeDetail.stops
     val busProgressIndex = routeDetail.busProgressIndex.coerceIn(0f, stops.lastIndex.toFloat())
-    val isCurvedRoute = stops.size >= 7
+    val isCurvedRoute = stops.size >= 6
     var selectedStopIndex by remember(schedule.id, stops) {
         mutableStateOf<Int?>(null)
     }
@@ -675,7 +675,7 @@ private fun RouteProgressBar(
     val navy = NavyBlue
     val inactive = Color(0xFFE3E7ED)
 
-    if (isCurvedRoute && stops.size >= 7) {
+    if (isCurvedRoute && stops.size >= 6) {
         CurvedBusRoute(stops = stops, busProgressIndex = busProgressIndex, navy = navy, inactive = inactive, onStopClick = onStopClick)
     } else {
         StraightBusRoute(stops = stops, busProgressIndex = busProgressIndex, navy = navy, inactive = inactive, onStopClick = onStopClick)
@@ -776,26 +776,18 @@ private fun CurvedBusRoute(
         val topY = maxHeight * 0.28f
         val bottomY = maxHeight * 0.66f
         val rightY = maxHeight * 0.45f
-        val routePoints = listOf(
-            (maxWidth * 0.10f) to topY,
-            (maxWidth * 0.33f) to topY,
-            (maxWidth * 0.56f) to topY,
-            (maxWidth * 0.86f) to rightY,
-            (maxWidth * 0.56f) to bottomY,
-            (maxWidth * 0.33f) to bottomY,
-            (maxWidth * 0.10f) to bottomY
-        )
-        val topCorner = routePoints[3].first to topY
-        val bottomCorner = routePoints[3].first to bottomY
-        val labelOffsets = listOf(
-            (-26).dp to 18.dp,
-            (-26).dp to 18.dp,
-            (-26).dp to 18.dp,
-            (-52).dp to 22.dp,
-            (-26).dp to 18.dp,
-            (-26).dp to 18.dp,
-            (-26).dp to 18.dp
-        )
+        val leftX = maxWidth * 0.10f
+        val innerRightX = maxWidth * 0.58f
+        val turnX = maxWidth * 0.86f
+        val topCount = (stops.size / 2).coerceAtLeast(3)
+        val sideIndex = topCount
+        val bottomCount = (stops.size - topCount - 1).coerceAtLeast(1)
+        val topPoints = evenlySpacedRoutePoints(topCount, leftX, innerRightX, topY)
+        val sidePoint = turnX to rightY
+        val bottomPoints = evenlySpacedRoutePoints(bottomCount, innerRightX, leftX, bottomY)
+        val routePoints = topPoints + sidePoint + bottomPoints
+        val topCorner = turnX to topY
+        val bottomCorner = turnX to bottomY
 
         Canvas(modifier = Modifier.matchParentSize()) {
             fun p(index: Int) = Offset(routePoints[index].first.toPx(), routePoints[index].second.toPx())
@@ -806,14 +798,15 @@ private fun CurvedBusRoute(
             val stopStroke = 5.dp.toPx()
             val routePath = Path().apply {
                 moveTo(p(0).x, p(0).y)
-                lineTo(p(1).x, p(1).y)
-                lineTo(p(2).x, p(2).y)
+                for (index in 1 until topCount) {
+                    lineTo(p(index).x, p(index).y)
+                }
                 lineTo(corner(topCorner).x, corner(topCorner).y)
-                lineTo(p(3).x, p(3).y)
+                lineTo(p(sideIndex).x, p(sideIndex).y)
                 lineTo(corner(bottomCorner).x, corner(bottomCorner).y)
-                lineTo(p(4).x, p(4).y)
-                lineTo(p(5).x, p(5).y)
-                lineTo(p(6).x, p(6).y)
+                for (index in (sideIndex + 1) until routePoints.size) {
+                    lineTo(p(index).x, p(index).y)
+                }
             }
 
             drawPath(
@@ -838,7 +831,7 @@ private fun CurvedBusRoute(
             )
         }
 
-        val markerPosition = interpolateCurvedRoutePoint(routePoints, clampedBus, topCorner, bottomCorner)
+        val markerPosition = interpolateCurvedRoutePoint(routePoints, clampedBus, topCorner, bottomCorner, sideIndex)
         BusLocationMarker(
             modifier = Modifier.offset(
                 x = markerPosition.first - 35.dp,
@@ -849,7 +842,8 @@ private fun CurvedBusRoute(
         )
 
         routePoints.forEachIndexed { index, point ->
-            val labelOffset = labelOffsets.getOrElse(index) { (-26).dp to 18.dp }
+            val labelXOffset = if (index == sideIndex) (-52).dp else (-32).dp
+            val labelWidth = if (index == sideIndex) 58.dp else 64.dp
             Text(
                 text = stops.getOrElse(index) { "" },
                 fontSize = 10.sp,
@@ -859,12 +853,25 @@ private fun CurvedBusRoute(
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .offset(
-                        x = point.first + labelOffset.first,
-                        y = point.second + labelOffset.second
+                        x = point.first + labelXOffset,
+                        y = point.second + 18.dp
                     )
-                    .width(64.dp)
+                    .width(labelWidth)
             )
         }
+    }
+}
+
+private fun evenlySpacedRoutePoints(
+    count: Int,
+    startX: Dp,
+    endX: Dp,
+    y: Dp
+): List<Pair<Dp, Dp>> {
+    if (count <= 1) return listOf(startX to y)
+    return List(count) { index ->
+        val fraction = index.toFloat() / (count - 1).toFloat()
+        (startX + (endX - startX) * fraction) to y
     }
 }
 
@@ -881,7 +888,8 @@ private fun interpolateCurvedRoutePoint(
     points: List<Pair<Dp, Dp>>,
     progress: Float,
     topCorner: Pair<Dp, Dp>,
-    bottomCorner: Pair<Dp, Dp>
+    bottomCorner: Pair<Dp, Dp>,
+    sideIndex: Int
 ): Pair<Dp, Dp> {
     val startIndex = progress.toInt().coerceIn(0, points.lastIndex)
     val endIndex = (startIndex + 1).coerceAtMost(points.lastIndex)
@@ -894,12 +902,12 @@ private fun interpolateCurvedRoutePoint(
     }
 
     return when (startIndex) {
-        2 -> if (fraction < 0.5f) {
+        sideIndex - 1 -> if (fraction < 0.5f) {
             lerpDp(start, topCorner, fraction * 2f)
         } else {
             lerpDp(topCorner, end, (fraction - 0.5f) * 2f)
         }
-        3 -> if (fraction < 0.5f) {
+        sideIndex -> if (fraction < 0.5f) {
             lerpDp(start, bottomCorner, fraction * 2f)
         } else {
             lerpDp(bottomCorner, end, (fraction - 0.5f) * 2f)
