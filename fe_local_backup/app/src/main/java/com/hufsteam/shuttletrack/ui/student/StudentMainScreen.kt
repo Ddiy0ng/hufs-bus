@@ -478,7 +478,7 @@ private fun StudentRouteStatusContent(
 ) {
     val stops = routeDetail.stops
     val busProgressIndex = routeDetail.busProgressIndex.coerceIn(0f, stops.lastIndex.toFloat())
-    val isCurvedRoute = stops.size >= 6
+    val isCurvedRoute = stops.size >= 7
     var selectedStopIndex by remember(schedule.id, stops) {
         mutableStateOf<Int?>(null)
     }
@@ -675,7 +675,7 @@ private fun RouteProgressBar(
     val navy = NavyBlue
     val inactive = Color(0xFFE3E7ED)
 
-    if (isCurvedRoute && stops.size >= 6) {
+    if (isCurvedRoute && stops.size >= 7) {
         CurvedBusRoute(stops = stops, busProgressIndex = busProgressIndex, navy = navy, inactive = inactive, onStopClick = onStopClick)
     } else {
         StraightBusRoute(stops = stops, busProgressIndex = busProgressIndex, navy = navy, inactive = inactive, onStopClick = onStopClick)
