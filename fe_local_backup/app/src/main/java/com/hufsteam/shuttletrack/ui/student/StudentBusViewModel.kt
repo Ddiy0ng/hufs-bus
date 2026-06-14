@@ -351,7 +351,11 @@ val mockOffCampusSchedules = listOf(
     BusSchedule(2, "경기광주역 → 외대(글)", "08:30", 45, 45, "위치 확인 중입니다"),
     BusSchedule(3, "경기광주역 → 외대(글)", "08:40", 44, 45, "내리실 정거장에 접근 중입니다"),
     BusSchedule(4, "경기광주역 → 외대(글)", "08:50", 42, 45, "인문경상관 근처입니다"),
-    BusSchedule(9, "외대(글) → 경기광주역", "10:30", 36, 45, "후생관 근처입니다")
+    BusSchedule(9, "외대(글) → 경기광주역", "10:30", 36, 45, "후생관 근처입니다"),
+    BusSchedule(10, "판교역 → 외대(글)", "07:40", 45, 45, "판교역 출발 전입니다"),
+    BusSchedule(11, "판교역 → 외대(글)", "09:40", 44, 45, "성남역 근처입니다"),
+    BusSchedule(12, "외대(글) → 판교역", "14:10", 45, 45, "출발 전입니다"),
+    BusSchedule(13, "외대(글) → 판교역", "17:30", 42, 45, "서현역 근처입니다")
 )
 
 val mockOnCampusSchedules = listOf(
@@ -363,6 +367,8 @@ val mockOnCampusSchedules = listOf(
 
 fun mockRouteDetailFor(schedule: BusSchedule): RouteDetail {
     val stops = when {
+        schedule.routeName.startsWith("판교역") -> listOf("판교역\n(기점)", "성남역", "서현역", "외대(글)\n(종점)")
+        schedule.routeName.endsWith("판교역") -> listOf("외대(글)\n(기점)", "서현역", "성남역", "판교역\n(종점)")
         schedule.routeName.startsWith("외대(글)") -> listOf("인문경상관\n(기점)", "교양관", "후생관", "공학관", "백년관", "기숙사", "지석묘\n(종점)")
         schedule.routeName.contains("경기광주역") -> listOf("인경관\n(기점)", "교양관", "후생관", "공학관", "백년관", "기숙사", "지석묘\n(종점)")
         schedule.routeName.contains("지석묘") -> listOf("지석묘\n(기점)", "기숙사", "도서관", "어문관", "인문경상관\n(종점)")

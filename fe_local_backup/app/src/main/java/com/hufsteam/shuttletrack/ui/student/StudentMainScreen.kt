@@ -114,15 +114,19 @@ private val ShuttleRegularTextStyle = TextStyle(
 )
 private val offCampusSchedules = listOf(
     BusSchedule(1, "경기광주역 → 외대(글)", "08:20", 8,  45, "법학관을 지나고 있습니다"),
-    BusSchedule(2, "경기광주역 → 외대(글)", "08:30", 48, 48, "위치 확인 중입니다"),
+    BusSchedule(2, "경기광주역 → 외대(글)", "08:30", 45, 45, "위치 확인 중입니다"),
     BusSchedule(3, "경기광주역 → 외대(글)", "08:40", 44, 45, "내리실 정거장에 접근 중입니다"),
     BusSchedule(4, "경기광주역 → 외대(글)", "08:50", 42, 45, "인문경상관 근처입니다"),
-    BusSchedule(9, "외대(글) → 경기광주역", "10:30", 36, 45, "후생관 근처입니다")
+    BusSchedule(9, "외대(글) → 경기광주역", "10:30", 36, 45, "후생관 근처입니다"),
+    BusSchedule(10, "판교역 → 외대(글)", "07:40", 45, 45, "판교역 출발 전입니다"),
+    BusSchedule(11, "판교역 → 외대(글)", "09:40", 44, 45, "성남역 근처입니다"),
+    BusSchedule(12, "외대(글) → 판교역", "14:10", 45, 45, "출발 전입니다"),
+    BusSchedule(13, "외대(글) → 판교역", "17:30", 42, 45, "서현역 근처입니다")
 )
 
 private val onCampusSchedules = listOf(
-    BusSchedule(5, "지석묘 → 인문경상관", "09:20", 8,  40, "지석묘 출발"),
-    BusSchedule(6, "지석묘 → 인문경상관", "09:30", 48, 48, "위치입니다"),
+    BusSchedule(5, "지석묘 → 인문경상관", "09:20", 8,  45, "지석묘 출발"),
+    BusSchedule(6, "지석묘 → 인문경상관", "09:30", 45, 45, "위치입니다"),
     BusSchedule(7, "지석묘 → 인문경상관", "09:40", 44, 45, "나름 적당히 긴 위치이름입니다"),
     BusSchedule(8, "지석묘 → 인문경상관", "09:50", 42, 45, "엄청엄청 긴 위치이름입니다초")
 )
@@ -134,7 +138,7 @@ private val offCampusRoutes = listOf(
     "외대(글) → 판교역"
 )
 private val onCampusRoutes = listOf("지석묘 → 인문경상관")
-private val hours = listOf(8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
+private val hours = listOf(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
 
 // ── 메인 화면 ───────────────────────────────────────────────────
 @Composable
