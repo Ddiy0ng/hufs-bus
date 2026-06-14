@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hufsteam.shuttletrack.data.remote.ShuttleApiClient
 import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.data.model.UserRole
@@ -70,6 +71,7 @@ import com.hufsteam.shuttletrack.ui.theme.DriverBadgeText
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 import com.hufsteam.shuttletrack.ui.theme.StudentBadge
 import com.hufsteam.shuttletrack.ui.theme.StudentBadgeText
+import kotlinx.coroutines.launch
 
 // ── 내부 화면 상태 ──────────────────────────────────────────────
 private enum class StudentScreen { TIMETABLE, ROUTE_STATUS, FAVORITES, MYPAGE }
@@ -82,7 +84,8 @@ data class BusSchedule(
     val departureTime: String,
     val remainingSeats: Int,
     val totalSeats: Int,
-    val currentLocation: String
+    val currentLocation: String,
+    val routeStops: List<String> = emptyList()
 )
 
 data class FavoriteSchedule(
@@ -1045,6 +1048,8 @@ private fun StudentMyPageContent(
         UserRole.STUDENT -> StudentBadgeText
     }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val apiClient = remember { ShuttleApiClient }
     var adminFile by remember { mutableStateOf<AdminUploadFile?>(null) }
     var adminUploaded by remember { mutableStateOf(false) }
     var privacyPdfFile by remember { mutableStateOf<AdminUploadFile?>(null) }
@@ -1135,8 +1140,22 @@ private fun StudentMyPageContent(
                                     adminUploaded = false
                                     noticeMessage = "시간표 파일을 다시 수정할 수 있습니다"
                                 } else {
-                                    adminUploaded = true
-                                    noticeMessage = "버스 시간표가 저장되었습니다"
+                                    scope.launch {
+                                        noticeMessage = "버스 시간표를 업로드 중입니다"
+                                        val success = apiClient.uploadFile(
+                                            context = context,
+                                            path = "/api/timetable",
+                                            uri = file.uri,
+                                            fileName = file.name,
+                                            mimeType = file.mimeType
+                                        )
+                                        adminUploaded = success
+                                        noticeMessage = if (success) {
+                                            "버스 시간표가 업로드되었습니다"
+                                        } else {
+                                            "시간표 업로드에 실패했습니다. 서버 상태를 확인해 주세요"
+                                        }
+                                    }
                                 }
                             }
                         )
@@ -1195,8 +1214,22 @@ private fun StudentMyPageContent(
                         onSubmit = {
                             val file = privacyPdfFile
                             if (file?.isValidPdfUpload() == true) {
-                                privacyPdfUploaded = true
-                                noticeMessage = "개인정보 처리 방침 PDF가 저장되었습니다"
+                                scope.launch {
+                                    noticeMessage = "개인정보 처리 방침 PDF를 업로드 중입니다"
+                                    val success = apiClient.uploadFile(
+                                        context = context,
+                                        path = "/api/terms/privacy",
+                                        uri = file.uri,
+                                        fileName = file.name,
+                                        mimeType = file.mimeType
+                                    )
+                                    privacyPdfUploaded = success
+                                    noticeMessage = if (success) {
+                                        "개인정보 처리 방침 PDF가 업로드되었습니다"
+                                    } else {
+                                        "개인정보 처리 방침 PDF 업로드에 실패했습니다"
+                                    }
+                                }
                             } else {
                                 noticeMessage = "PDF 파일만 10MB 이하로 등록할 수 있습니다"
                             }
@@ -1215,20 +1248,30 @@ private fun StudentMyPageContent(
                         onSubmit = {
                             val file = serviceTermsPdfFile
                             if (file?.isValidPdfUpload() == true) {
-                                serviceTermsPdfUploaded = true
-                                noticeMessage = "서비스 이용 약관 PDF가 저장되었습니다"
+                                scope.launch {
+                                    noticeMessage = "서비스 이용 약관 PDF를 업로드 중입니다"
+                                    val success = apiClient.uploadFile(
+                                        context = context,
+                                        path = "/api/terms/service",
+                                        uri = file.uri,
+                                        fileName = file.name,
+                                        mimeType = file.mimeType
+                                    )
+                                    serviceTermsPdfUploaded = success
+                                    noticeMessage = if (success) {
+                                        "서비스 이용 약관 PDF가 업로드되었습니다"
+                                    } else {
+                                        "서비스 이용 약관 PDF 업로드에 실패했습니다"
+                                    }
+                                }
                             } else {
                                 noticeMessage = "PDF 파일만 10MB 이하로 등록할 수 있습니다"
                             }
                         }
                     )
                 } else {
-                    MyPageRow("개인정보 처리 방침") {
-                        noticeMessage = "개인정보 처리 방침 PDF 조회 API 연동 후 열립니다"
-                    }
-                    MyPageRow("서비스 이용 약관") {
-                        noticeMessage = "서비스 이용 약관 PDF 조회 API 연동 후 열립니다"
-                    }
+                    MyPageRow("개인정보 처리 방침", onClick = onGoPrivacyTerms)
+                    MyPageRow("서비스 이용 약관", onClick = onGoServiceTerms)
                 }
                 Spacer(Modifier.height(24.dp))
 
