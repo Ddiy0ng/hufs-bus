@@ -194,9 +194,13 @@ fun StudentMainScreen(
                     isLoading = studentUiState.isLoading,
                     errorMessage = studentUiState.errorMessage,
                     onScheduleClick = {
-                        selectedSchedule = it
-                        studentBusViewModel.loadRouteStatus(it)
-                        currentScreen = StudentScreen.ROUTE_STATUS
+                        if (viewModel.userRole == UserRole.DRIVER) {
+                            onGoDriverOperation(it.toDriverRoute())
+                        } else {
+                            selectedSchedule = it
+                            studentBusViewModel.loadRouteStatus(it)
+                            currentScreen = StudentScreen.ROUTE_STATUS
+                        }
                     }
                 )
 
@@ -270,6 +274,20 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
     return normalized.copy(
         remainingSeats = (FIXED_TOTAL_SEATS - currentPassengers).coerceIn(0, FIXED_TOTAL_SEATS),
         currentLocation = liveLocation
+    )
+}
+
+private fun BusSchedule.toDriverRoute(): DriverRoute {
+    val stops = routeStops
+        .ifEmpty { mockRouteDetailFor(this).stops }
+        .map { it.replace("\n", " ") }
+
+    return DriverRoute(
+        id = "timetable_$id",
+        routeName = routeName,
+        scheduledTime = departureTime,
+        totalSeats = totalSeats,
+        stops = stops
     )
 }
 
