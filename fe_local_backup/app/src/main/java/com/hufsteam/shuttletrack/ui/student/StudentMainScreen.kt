@@ -112,32 +112,15 @@ private val ShuttleRegularTextStyle = TextStyle(
     lineHeight = 16.sp,
     letterSpacing = 0.sp
 )
-private val offCampusSchedules = listOf(
-    BusSchedule(1, "경기광주역 → 외대(글)", "08:20", 8,  45, "법학관을 지나고 있습니다"),
-    BusSchedule(2, "경기광주역 → 외대(글)", "08:30", 45, 45, "위치 확인 중입니다"),
-    BusSchedule(3, "경기광주역 → 외대(글)", "08:40", 44, 45, "내리실 정거장에 접근 중입니다"),
-    BusSchedule(4, "경기광주역 → 외대(글)", "08:50", 42, 45, "인문경상관 근처입니다"),
-    BusSchedule(9, "외대(글) → 경기광주역", "10:30", 36, 45, "후생관 근처입니다"),
-    BusSchedule(10, "판교역 → 외대(글)", "07:40", 45, 45, "판교역 출발 전입니다"),
-    BusSchedule(11, "판교역 → 외대(글)", "09:40", 44, 45, "성남역 근처입니다"),
-    BusSchedule(12, "외대(글) → 판교역", "14:10", 45, 45, "출발 전입니다"),
-    BusSchedule(13, "외대(글) → 판교역", "17:30", 42, 45, "서현역 근처입니다")
-)
-
-private val onCampusSchedules = listOf(
-    BusSchedule(5, "지석묘 → 인문경상관", "09:20", 8,  45, "지석묘 출발"),
-    BusSchedule(6, "지석묘 → 인문경상관", "09:30", 45, 45, "위치입니다"),
-    BusSchedule(7, "지석묘 → 인문경상관", "09:40", 44, 45, "나름 적당히 긴 위치이름입니다"),
-    BusSchedule(8, "지석묘 → 인문경상관", "09:50", 42, 45, "엄청엄청 긴 위치이름입니다초")
-)
+private val offCampusSchedules = mockOffCampusSchedules
+private val onCampusSchedules = mockOnCampusSchedules
 
 private val offCampusRoutes = listOf(
-    "경기광주역 → 외대(글)",
-    "외대(글) → 경기광주역",
     "판교역 → 외대(글)",
-    "외대(글) → 판교역"
+    "외대(글) → 판교역",
+    "경기광주역 → 외대(글)"
 )
-private val onCampusRoutes = listOf("지석묘 → 인문경상관")
+private val onCampusRoutes = listOf("지석묘 → 인문경상관", "인문경상관 → 지석묘")
 private val hours = listOf(7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
 
 // ── 메인 화면 ───────────────────────────────────────────────────
@@ -385,8 +368,21 @@ private fun StudentTimetableContent(
 
             Spacer(Modifier.height(12.dp))
 
+            val routeSchedules = schedules.filter { it.routeName == selectedRoute }.ifEmpty { schedules }
+            val routeHours = routeSchedules
+                .mapNotNull { it.departureTime.substringBefore(":").toIntOrNull() }
+                .distinct()
+                .sorted()
+            val visibleHours = routeHours.ifEmpty { hours }
+
+            LaunchedEffect(selectedRoute, selectedCampus, routeHours) {
+                if (routeHours.isNotEmpty() && selectedHour !in routeHours) {
+                    selectedHour = routeHours.first()
+                }
+            }
+
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(hours) { hour ->
+                items(visibleHours) { hour ->
                     val isSelected = hour == selectedHour
                     Box(
                         modifier = Modifier
@@ -408,9 +404,7 @@ private fun StudentTimetableContent(
 
             Spacer(Modifier.height(12.dp))
 
-            val routeSchedules = schedules.filter { it.routeName == selectedRoute }.ifEmpty { schedules }
-            val hourSchedules = routeSchedules.filter { it.departureTime.substringBefore(":").toIntOrNull() == selectedHour }
-            val visibleSchedules = hourSchedules.ifEmpty { routeSchedules }
+            val visibleSchedules = routeSchedules.filter { it.departureTime.substringBefore(":").toIntOrNull() == selectedHour }
 
             if (visibleSchedules.isEmpty()) {
                 EmptyStateMessage("해당 시간대 운행 정보가 없습니다.")

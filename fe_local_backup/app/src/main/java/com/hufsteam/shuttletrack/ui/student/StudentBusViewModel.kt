@@ -346,33 +346,101 @@ private data class IndexedStopPoint(
     val longitude: Double
 )
 
-val mockOffCampusSchedules = listOf(
-    BusSchedule(1, "경기광주역 → 외대(글)", "08:20", 8, 45, "법학관을 지나고 있습니다"),
-    BusSchedule(2, "경기광주역 → 외대(글)", "08:30", 45, 45, "위치 확인 중입니다"),
-    BusSchedule(3, "경기광주역 → 외대(글)", "08:40", 44, 45, "내리실 정거장에 접근 중입니다"),
-    BusSchedule(4, "경기광주역 → 외대(글)", "08:50", 42, 45, "인문경상관 근처입니다"),
-    BusSchedule(9, "외대(글) → 경기광주역", "10:30", 36, 45, "후생관 근처입니다"),
-    BusSchedule(10, "판교역 → 외대(글)", "07:40", 45, 45, "판교역 출발 전입니다"),
-    BusSchedule(11, "판교역 → 외대(글)", "09:40", 44, 45, "성남역 근처입니다"),
-    BusSchedule(12, "외대(글) → 판교역", "14:10", 45, 45, "출발 전입니다"),
-    BusSchedule(13, "외대(글) → 판교역", "17:30", 42, 45, "서현역 근처입니다")
+val mockOffCampusSchedules = mockSchedulesFromGroups(
+    startId = 100,
+    MockScheduleGroup(
+        routeName = "판교역 → 외대(글)",
+        stops = listOf("판교역\n(기점)", "성남역", "서현역", "외대(글)\n(종점)"),
+        times = listOf("07:40", "07:45", "07:50", "09:40", "09:50"),
+        currentLocation = "판교역 출발 전입니다"
+    ),
+    MockScheduleGroup(
+        routeName = "외대(글) → 판교역",
+        stops = listOf("외대(글)\n(기점)", "서현역", "성남역", "판교역\n(종점)"),
+        times = listOf("14:10", "15:10", "15:25", "17:30", "18:20"),
+        currentLocation = "출발 전입니다"
+    ),
+    MockScheduleGroup(
+        routeName = "경기광주역 → 외대(글)",
+        stops = listOf("경기광주역\n(기점)", "기숙사", "백년관", "인문경상관\n(종점)"),
+        times = listOf("18:05"),
+        currentLocation = "경기광주역 출발 전입니다"
+    )
 )
 
-val mockOnCampusSchedules = listOf(
-    BusSchedule(5, "지석묘 → 인문경상관", "09:20", 8, 45, "지석묘 출발"),
-    BusSchedule(6, "지석묘 → 인문경상관", "09:30", 45, 45, "위치입니다"),
-    BusSchedule(7, "지석묘 → 인문경상관", "09:40", 44, 45, "도서관 근처입니다"),
-    BusSchedule(8, "지석묘 → 인문경상관", "09:50", 42, 45, "인문경상관 근처입니다")
+val mockOnCampusSchedules = mockSchedulesFromGroups(
+    startId = 1,
+    MockScheduleGroup(
+        routeName = "지석묘 → 인문경상관",
+        stops = listOf("지석묘\n(기점)", "기숙사", "도서관", "어문관", "인문경상관\n(종점)"),
+        times = listOf(
+            "08:20", "08:30", "08:40", "08:40", "08:50", "08:50", "09:00", "09:15", "09:30",
+            "09:40", "09:50", "10:00", "10:15", "10:30", "10:40", "10:40", "10:50", "10:50",
+            "11:00", "11:15", "11:30", "11:35", "11:40", "11:50", "12:10", "12:50", "12:50",
+            "13:00", "13:15", "13:30", "13:40", "13:50", "14:00", "14:15", "14:30", "14:40",
+            "14:50", "15:00", "15:30", "15:40", "15:50", "16:00", "16:20", "16:40", "17:00",
+            "17:20", "17:40", "18:00", "18:30", "19:00", "19:30", "20:00", "20:30"
+        ),
+        currentLocation = "지석묘 출발 전입니다"
+    ),
+    MockScheduleGroup(
+        routeName = "인문경상관 → 지석묘",
+        stops = listOf("인문경상관\n(기점)", "교양관", "공학관", "백년관", "기숙사", "지석묘\n(종점)"),
+        times = listOf(
+            "08:30", "08:40", "08:50", "09:00", "09:10", "09:25", "09:40", "09:50", "10:00",
+            "10:10", "10:25", "10:40", "10:50", "11:00", "11:10", "11:25", "11:40", "11:45",
+            "11:50", "12:00", "12:20", "13:00", "13:00", "13:10", "13:25", "13:40", "13:50",
+            "14:00", "14:10", "14:25", "14:40", "14:50", "14:50", "15:00", "15:10", "15:40",
+            "15:50", "16:00", "16:10", "16:30", "16:50", "16:50", "17:10", "17:30", "17:50",
+            "18:10", "18:40", "19:10", "19:40", "20:10", "20:40"
+        ),
+        currentLocation = "인문경상관 출발 전입니다"
+    )
 )
+
+private data class MockScheduleGroup(
+    val routeName: String,
+    val stops: List<String>,
+    val times: List<String>,
+    val currentLocation: String
+)
+
+private fun mockSchedulesFromGroups(startId: Int, vararg groups: MockScheduleGroup): List<BusSchedule> {
+    var nextId = startId
+    return groups.flatMap { group ->
+        group.times.mapIndexed { index, time ->
+            BusSchedule(
+                id = nextId++,
+                routeName = group.routeName,
+                departureTime = time,
+                remainingSeats = mockRemainingSeats(index),
+                totalSeats = FIXED_TOTAL_SEATS,
+                currentLocation = group.currentLocation,
+                routeStops = group.stops
+            )
+        }
+    }
+}
+
+private fun mockRemainingSeats(index: Int): Int {
+    return when (index % 4) {
+        0 -> 45
+        1 -> 44
+        2 -> 42
+        else -> 36
+    }
+}
 
 fun mockRouteDetailFor(schedule: BusSchedule): RouteDetail {
-    val stops = when {
+    val stops = schedule.routeStops.ifEmpty {
+        when {
         schedule.routeName.startsWith("판교역") -> listOf("판교역\n(기점)", "성남역", "서현역", "외대(글)\n(종점)")
         schedule.routeName.endsWith("판교역") -> listOf("외대(글)\n(기점)", "서현역", "성남역", "판교역\n(종점)")
         schedule.routeName.startsWith("외대(글)") -> listOf("인문경상관\n(기점)", "교양관", "후생관", "공학관", "백년관", "기숙사", "지석묘\n(종점)")
         schedule.routeName.contains("경기광주역") -> listOf("인경관\n(기점)", "교양관", "후생관", "공학관", "백년관", "기숙사", "지석묘\n(종점)")
         schedule.routeName.contains("지석묘") -> listOf("지석묘\n(기점)", "기숙사", "도서관", "어문관", "인문경상관\n(종점)")
         else -> listOf("정류장1", "정류장2", "정류장3", "정류장4")
+        }
     }
     val currentIndex = if (stops.size >= 7) 2 else (stops.lastIndex - 1).coerceAtLeast(1)
     val infos = stops.associate { stop ->
