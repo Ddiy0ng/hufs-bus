@@ -71,6 +71,7 @@ import com.hufsteam.shuttletrack.ui.theme.DriverBadgeText
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 import com.hufsteam.shuttletrack.ui.theme.StudentBadge
 import com.hufsteam.shuttletrack.ui.theme.StudentBadgeText
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ── 내부 화면 상태 ──────────────────────────────────────────────
@@ -158,6 +159,15 @@ fun StudentMainScreen(
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
         if (allSchedules.isNotEmpty() && allSchedules.none { it.id == selectedSchedule.id }) {
             selectedSchedule = allSchedules.first()
+        }
+    }
+
+    LaunchedEffect(currentScreen, selectedSchedule.id) {
+        if (currentScreen == StudentScreen.ROUTE_STATUS) {
+            while (true) {
+                studentBusViewModel.loadRouteStatus(selectedSchedule)
+                delay(5_000)
+            }
         }
     }
 
@@ -726,23 +736,29 @@ private fun StraightBusRoute(
             height = 96.dp
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset(y = maxHeight * 0.63f),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            stops.forEach { stop ->
-                Text(
-                    text = stop,
-                    fontSize = 11.sp,
-                    color = Color(0xFF222222),
-                    textAlign = TextAlign.Center,
-                    lineHeight = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.width(64.dp)
-                )
+        val labelWidth = if (stops.size >= 6) 58.dp else 68.dp
+        val labelFontSize = if (stops.size >= 6) 10.sp else 11.sp
+        val labelLineHeight = if (stops.size >= 6) 12.sp else 13.sp
+        stops.forEachIndexed { index, stop ->
+            val x = startX + gap * index
+            val rawLabelX = x - labelWidth / 2
+            val maxLabelX = maxWidth - labelWidth
+            val labelX = when {
+                rawLabelX < 0.dp -> 0.dp
+                rawLabelX > maxLabelX -> maxLabelX
+                else -> rawLabelX
             }
+            Text(
+                text = stop,
+                fontSize = labelFontSize,
+                color = Color(0xFF222222),
+                textAlign = TextAlign.Center,
+                lineHeight = labelLineHeight,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier
+                    .offset(x = labelX, y = lineY + 29.dp)
+                    .width(labelWidth)
+            )
         }
     }
 }
