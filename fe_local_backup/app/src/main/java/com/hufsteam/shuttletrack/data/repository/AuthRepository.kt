@@ -76,6 +76,16 @@ class AuthRepository(
     }
 
     suspend fun getCurrentUser(): Result<AuthSession> = runCatching {
+        val token = TokenStore.accessToken
+        val savedRole = TokenStore.role
+        if (!token.isNullOrBlank() && !savedRole.isNullOrBlank()) {
+            return@runCatching AuthSession(
+                email = TokenStore.email.orEmpty(),
+                role = savedRole.toUserRole(),
+                accessToken = token
+            )
+        }
+
         val serverSession = runCatching {
             val response = callOrThrowServerMessage { apiService.getUser() }
             val payload = response.payloadObject()
@@ -86,8 +96,6 @@ class AuthRepository(
             )
         }
         serverSession.getOrElse { throwable ->
-            val token = TokenStore.accessToken
-            val savedRole = TokenStore.role
             if (!token.isNullOrBlank() && !savedRole.isNullOrBlank()) {
                 AuthSession(
                     email = TokenStore.email.orEmpty(),
