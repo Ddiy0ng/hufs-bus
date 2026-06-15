@@ -23,10 +23,11 @@
 | 교내 시간표 | `GET /api/timetable?inOutCampus=IN_CAMPUS` | 200 | 정상 |
 | 교외 시간표 | `GET /api/timetable?inOutCampus=OUT_CAMPUS` | 200 | 정상 |
 | 즐겨찾기 조회 | `GET /api/favorite` | 200 | 정상 |
-| 좌석 조회 | `GET /api/buses/{timetableId}/seats` | 404, 해당 버스를 찾을 수 없습니다 | 2026-06-15 재확인 결과 timetableId 105~114 모두 404. 원인 확인됨: 엑셀 업로드 시 Bus 데이터가 생성되지 않던 백엔드 버그. `origin/soyeon` 서버 재배포 및 시간표 재업로드 후 재검증 필요 |
-| 기사 출발 등록 | `PATCH /api/timetable/1/depart` | 404, 해당 버스를 찾을 수 없습니다 | 원인 확인됨: timetable과 연결된 Bus 데이터 누락. `origin/soyeon` 서버 재배포 후 재검증 필요 |
+| 좌석 조회 | `GET /api/buses/{timetableId}/seats` | 404, 해당 버스를 찾을 수 없습니다 | 2026-06-15 재확인 결과 `GET /api/timetable` 응답의 `timetableId` 105~109 그대로 호출해도 모두 404. 서버 재배포 및 시간표 재업로드 후 재검증 필요 |
+| 버스 상태 조회 | `GET /api/buses/{timetableId}/statuses` | 500 | 2026-06-15 재확인 결과 `timetableId` 105~109 모두 500. FE는 `/statuses` 실패 시 `/seats`로 fallback하도록 구현됨 |
+| 기사 출발 등록 | `PATCH /api/timetable/{timetableId}/depart` | 미실행 | 실제 서버 상태를 바꾸는 요청이라 좌석 조회 200 확인 후 테스트 예정 |
 | 기사 GPS 전송 | `POST /api/driver/location` | 500, 서버 내부 오류 | Bus 데이터 생성 수정 배포 후 busId 기준으로 재검증 필요 |
-| 실시간 ETA | `GET /api/timetables/1/live?token={JWT}` | FE 호출 방식 반영 완료 | 백엔드 `origin/soyeon`의 query token 인증 수정 배포 후 재검증 필요 |
+| 실시간 ETA | `GET /api/timetables/{timetableId}/live?token={JWT}` | 401, 인증이 필요합니다 | 2026-06-15 재확인 결과 같은 토큰으로 `GET /api/favorite`는 200이지만 live는 헤더/쿼리 모두 401. 서버 재배포 또는 live 인증 설정 확인 필요 |
 | 개인정보 약관 | `GET /api/terms/privacy` | 400, 약관을 찾을 수 없습니다 | 서버에 PDF 등록 필요 |
 | 서비스 약관 | `GET /api/terms/service` | 400, 약관을 찾을 수 없습니다 | 서버에 PDF 등록 필요 |
 
