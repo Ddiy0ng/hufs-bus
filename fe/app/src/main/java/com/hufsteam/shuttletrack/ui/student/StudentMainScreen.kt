@@ -960,108 +960,196 @@ private fun StudentFavoritesContent(
     favorites: List<FavoriteSchedule>,
     onScheduleClick: (FavoriteSchedule) -> Unit
 ) {
-    var selectedCampus by remember { mutableStateOf("전체") }
-    var selectedDay by remember { mutableStateOf("전체") }
-    val campusOptions = listOf("전체", "교외", "교내")
-    val dayOptions = listOf("전체") + notificationDays
+    var selectedCampus by remember { mutableStateOf("교내") }
+    var selectedDay by remember { mutableStateOf(notificationDays.first()) }
+    val campusOptions = listOf("교내", "교외")
+    val dayOptions = notificationDays
     val visibleFavorites = favorites.filter { favorite ->
-        (selectedCampus == "전체" || favorite.schedule.campusType == selectedCampus) &&
-            (selectedDay == "전체" || selectedDay in favorite.days)
+        favorite.schedule.campusType == selectedCampus && selectedDay in favorite.days
     }
 
-    Column(modifier = Modifier.fillMaxSize().background(Color.White).padding(horizontal = 16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
+        Spacer(Modifier.height(20.dp))
+        Text(
+            "즐겨찾기",
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.Black
+        )
         Spacer(Modifier.height(18.dp))
-        Text("즐겨찾기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-        Spacer(Modifier.height(12.dp))
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(campusOptions) { option ->
-                FilterChip(
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(38.dp)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            campusOptions.forEach { option ->
+                FavoriteCampusTab(
+                    label = option,
                     selected = selectedCampus == option,
-                    onClick = { selectedCampus = option },
-                    label = { Text(option, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = NavyBlue,
-                        selectedLabelColor = Color.White
-                    )
-                )
+                    modifier = Modifier.weight(1f)
+                ) {
+                    selectedCampus = option
+                }
             }
         }
-        Spacer(Modifier.height(8.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(dayOptions) { option ->
-                FilterChip(
-                    selected = selectedDay == option,
-                    onClick = { selectedDay = option },
-                    label = { Text(option, fontSize = 12.sp) },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Color(0xFFEFF3FB),
-                        selectedLabelColor = NavyBlue
-                    )
-                )
-            }
-        }
-        Spacer(Modifier.height(12.dp))
 
-        if (favorites.isEmpty() || visibleFavorites.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("★", fontSize = 40.sp, color = Color(0xFFDDDDDD))
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        if (favorites.isEmpty()) "아직 추가된 즐겨찾기가 없습니다." else "선택한 분류의 즐겨찾기가 없습니다.",
-                        color = Color(0xFF999999),
-                        fontSize = 14.sp
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFFF5F6F8))
+                .padding(horizontal = 16.dp)
+        ) {
+            Spacer(Modifier.height(12.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(dayOptions) { day ->
+                    FavoriteDayChip(
+                        label = shortDayLabel(day),
+                        selected = selectedDay == day,
+                        onClick = { selectedDay = day }
                     )
                 }
             }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Spacer(Modifier.height(12.dp))
+
+            if (favorites.isEmpty() || visibleFavorites.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 40.dp),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    Text(
+                        if (favorites.isEmpty()) "아직 추가된 즐겨찾기가 없습니다" else "선택한 분류의 즐겨찾기가 없습니다",
+                        color = Color(0xFFB5BAC2),
+                        fontSize = 13.sp
+                    )
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 20.dp)
+                ) {
                 items(visibleFavorites) { favorite ->
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { onScheduleClick(favorite) },
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(8.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(favorite.schedule.routeName, fontSize = 13.sp, color = NavyBlue, fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.width(8.dp))
+                                Text(
+                                    favorite.schedule.routeName,
+                                    fontSize = 13.sp,
+                                    color = NavyBlue,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Row(verticalAlignment = Alignment.Bottom) {
                                     Text(
-                                        favorite.schedule.campusType,
-                                        fontSize = 11.sp,
-                                        color = Color.White,
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(50.dp))
-                                            .background(if (favorite.schedule.campusType == "교내") Color(0xFF4E78C8) else Color(0xFF0B3F6D))
-                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                        favorite.schedule.departureTime,
+                                        fontSize = 21.sp,
+                                        color = Color(0xFF1F2430),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "(${favorite.schedule.remainingSeats}석)",
+                                        color = Color(0xFFE53935),
+                                        fontSize = 18.sp,
+                                        fontWeight = FontWeight.Bold
                                     )
                                 }
-                                Spacer(Modifier.height(6.dp))
-                                Row(verticalAlignment = Alignment.Bottom) {
-                                    Text(favorite.schedule.departureTime, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("(${favorite.schedule.remainingSeats}석)", color = Color(0xFFE53935), fontWeight = FontWeight.Bold)
-                                }
-                                Spacer(Modifier.height(6.dp))
+                                Spacer(Modifier.height(10.dp))
                                 Text(
-                                    favorite.days.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: "요일 미설정",
+                                    "탑승 정류장 | ${favorite.schedule.currentLocation}",
                                     fontSize = 12.sp,
-                                    color = Color(0xFF777777)
+                                    color = Color(0xFF8A8F98)
                                 )
                             }
-                            Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFC400))
+                            Icon(
+                                Icons.Filled.Star,
+                                contentDescription = null,
+                                tint = Color(0xFFFFC400),
+                                modifier = Modifier.size(34.dp)
+                            )
                         }
                     }
+                }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun FavoriteCampusTab(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            color = if (selected) NavyBlue else Color(0xFF9DA3AD)
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(if (selected) 2.dp else 1.dp)
+                .background(if (selected) NavyBlue else DividerColor)
+        )
+    }
+}
+
+@Composable
+private fun FavoriteDayChip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .width(42.dp)
+            .height(34.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(if (selected) NavyBlue else Color(0xFFECEFF4))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (selected) Color.White else Color(0xFF9AA1AB)
+        )
+    }
+}
+
+private fun shortDayLabel(day: String): String = when (day) {
+    "월요일" -> "월"
+    "화요일" -> "화"
+    "수요일" -> "수"
+    "목요일" -> "목"
+    "금요일" -> "금"
+    else -> day
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
