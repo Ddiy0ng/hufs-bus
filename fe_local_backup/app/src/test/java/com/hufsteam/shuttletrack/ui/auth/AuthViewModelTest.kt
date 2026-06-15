@@ -10,10 +10,6 @@ package com.hufsteam.shuttletrack.ui.auth
  *  필요 의존성 (app/build.gradle):
  *  -------------------------------------------------
  *  testImplementation 'junit:junit:4.13.2'
- *  testImplementation 'androidx.arch.core:core-testing:2.2.0'
- *  testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
- *  testImplementation 'io.mockk:mockk:1.13.8'
- *  testImplementation 'io.mockk:mockk-agent-jvm:1.13.8'
  *  -------------------------------------------------
  *
  *  테스트 범위:
@@ -23,44 +19,10 @@ package com.hufsteam.shuttletrack.ui.auth
  * ============================================================
  */
 
-import androidx.arch.core.executor.testing.InstantTaskExecutorRule
-import com.google.android.gms.tasks.Tasks
-import com.google.firebase.auth.AuthResult
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.firestore.FirebaseFirestore
-import io.mockk.*
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.test.*
 import org.junit.*
 import org.junit.Assert.*
 
-@ExperimentalCoroutinesApi
 class AuthViewModelTest {
-
-    // LiveData를 메인 스레드 없이 동기 실행
-    @get:Rule
-    val instantRule = InstantTaskExecutorRule()
-
-    private val testDispatcher = StandardTestDispatcher()
-
-    // ── Firebase 목 객체 ─────────────────────────────────────
-    private lateinit var mockAuth: FirebaseAuth
-    private lateinit var mockFirestore: FirebaseFirestore
-
-    // ── 테스트 대상: 순수 유효성 검사 도우미 함수 ─────────────
-    // AuthViewModel 내부 로직과 동일하게 재현하여 Firebase 없이 검증
-
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(testDispatcher)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
 
     // ============================================================
     //  [L] 로그인 유효성 검사
@@ -150,13 +112,13 @@ class AuthViewModelTest {
 
     /**
      * TC-S-003
-     * 시나리오: 비밀번호 5자 (6자 미만)
-     * 기대: passwordError = "비밀번호는 6자 이상이어야 합니다"
+     * 시나리오: 비밀번호 7자 (8자 미만)
+     * 기대: passwordError = "비밀번호는 8자 이상이어야 합니다"
      */
     @Test
-    fun `TC-S-003 비밀번호 6자 미만 시 길이 에러`() {
-        val error = validateSignUpPassword("abc12")
-        assertEquals("비밀번호는 6자 이상이어야 합니다", error)
+    fun `TC-S-003 비밀번호 8자 미만 시 길이 에러`() {
+        val error = validateSignUpPassword("abc1234")
+        assertEquals("비밀번호는 8자 이상이어야 합니다", error)
     }
 
     /**
@@ -166,7 +128,7 @@ class AuthViewModelTest {
      */
     @Test
     fun `TC-S-004 숫자 없는 비밀번호 에러`() {
-        val error = validateSignUpPassword("abcdef")
+        val error = validateSignUpPassword("abcdefgh")
         assertEquals("영문과 숫자를 반드시 포함하여야 합니다", error)
     }
 
@@ -177,18 +139,18 @@ class AuthViewModelTest {
      */
     @Test
     fun `TC-S-005 영문 없는 비밀번호 에러`() {
-        val error = validateSignUpPassword("123456")
+        val error = validateSignUpPassword("12345678")
         assertEquals("영문과 숫자를 반드시 포함하여야 합니다", error)
     }
 
     /**
      * TC-S-006
-     * 시나리오: 영문 + 숫자 포함, 6자 이상
+     * 시나리오: 영문 + 숫자 포함, 8자 이상
      * 기대: passwordError = null (통과)
      */
     @Test
-    fun `TC-S-006 영문과 숫자 포함 6자 이상 비밀번호 통과`() {
-        val error = validateSignUpPassword("hufs12")
+    fun `TC-S-006 영문과 숫자 포함 8자 이상 비밀번호 통과`() {
+        val error = validateSignUpPassword("hufs1234")
         assertNull(error)
     }
 
@@ -267,7 +229,7 @@ class AuthViewModelTest {
         val hasLetter = password.any { it.isLetter() }
         val hasDigit  = password.any { it.isDigit() }
         return when {
-            password.length < 6         -> "비밀번호는 6자 이상이어야 합니다"
+            password.length < 8         -> "비밀번호는 8자 이상이어야 합니다"
             !hasLetter || !hasDigit     -> "영문과 숫자를 반드시 포함하여야 합니다"
             else                        -> null
         }

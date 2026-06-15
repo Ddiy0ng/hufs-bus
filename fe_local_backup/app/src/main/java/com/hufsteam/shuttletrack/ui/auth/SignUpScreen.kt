@@ -212,7 +212,14 @@ fun SignUpScreen(
                 ShuttleButton(
                     text    = "회원가입",
                     enabled = isEnabled,
-                    onClick = { viewModel.signUp(email, password) { } }
+                    onClick = {
+                        viewModel.signUp(
+                            email = email,
+                            password = password,
+                            privacyTermAgree = agreePrivacy,
+                            serviceTermAgree = agreeService
+                        ) { }
+                    }
                 )
             }
             Spacer(Modifier.height(24.dp))

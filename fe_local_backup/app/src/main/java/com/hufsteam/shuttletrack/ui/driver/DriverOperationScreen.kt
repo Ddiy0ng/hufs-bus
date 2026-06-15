@@ -1,5 +1,16 @@
 package com.hufsteam.shuttletrack.ui.driver
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
+import android.os.Looper
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,12 +25,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 private val DriverAccentRed = Color(0xFFB83A25)
 private val DriverSoftGray = Color(0xFFF4F6F8)
@@ -39,6 +55,20 @@ fun DriverOperationScreen(
     val actualTime = driverViewModel.actualDepartureTime
     val isGpsTracking = driverViewModel.isGpsTracking
     val operationMessage = driverViewModel.operationMessage
+    val lastGpsText = driverViewModel.lastGpsText
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
+        } else {
+            driverViewModel.setGpsStartError("위치 권한이 필요합니다")
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -130,7 +160,8 @@ fun DriverOperationScreen(
                         total            = total,
                         remainingSeats   = remainingSeats,
                         isGpsTracking    = isGpsTracking,
-                        message          = operationMessage
+                        message          = operationMessage,
+                        lastGpsText      = lastGpsText
                     )
                 }
 
@@ -158,7 +189,18 @@ fun DriverOperationScreen(
                     OperationButton(
                         text    = "출발 등록하기",
                         enabled = true,
-                        onClick = { driverViewModel.startOperation() }
+                        onClick = {
+                            if (hasLocationPermission(context)) {
+                                scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
+                            } else {
+                                permissionLauncher.launch(
+                                    arrayOf(
+                                        Manifest.permission.ACCESS_FINE_LOCATION,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION
+                                    )
+                                )
+                            }
+                        }
                     )
                 }
                 OperationState.OPERATING -> {
@@ -212,9 +254,19 @@ private fun OperatingContent(
     total: Int,
     remainingSeats: Int,
     isGpsTracking: Boolean,
-    message: String
+    message: String,
+    lastGpsText: String?
 ) {
     OperationStatePill(message = message, isActive = isGpsTracking)
+    lastGpsText?.let {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "마지막 GPS $it",
+            fontSize = 11.sp,
+            color = Color(0xFF777777),
+            textAlign = TextAlign.Center
+        )
+    }
 
     Spacer(Modifier.height(18.dp))
 
@@ -406,5 +458,77 @@ private fun OperationButton(text: String, enabled: Boolean, onClick: () -> Unit)
             fontWeight = FontWeight.SemiBold,
             color      = if (enabled) Color.White else Color(0xFF9AA1AB)
         )
+    }
+}
+
+private fun hasLocationPermission(context: Context): Boolean {
+    val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+    val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION)
+    return fine == PackageManager.PERMISSION_GRANTED || coarse == PackageManager.PERMISSION_GRANTED
+}
+
+private suspend fun startOperationWithCurrentLocation(
+    context: Context,
+    driverViewModel: DriverViewModel
+) {
+    val location = readCurrentLocation(context)
+    if (location == null) {
+        driverViewModel.setGpsStartError("현재 GPS 위치를 확인할 수 없습니다")
+        return
+    }
+    driverViewModel.startOperation(
+        latitude = location.latitude,
+        longitude = location.longitude
+    )
+}
+
+@SuppressLint("MissingPermission")
+private suspend fun readCurrentLocation(context: Context): Location? = suspendCancellableCoroutine { cont ->
+    if (!hasLocationPermission(context)) {
+        cont.resume(null)
+        return@suspendCancellableCoroutine
+    }
+
+    val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+    val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+        .filter { provider -> runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false) }
+
+    val lastKnownLocation = providers
+        .mapNotNull { provider -> runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull() }
+        .maxByOrNull { it.time }
+
+    if (lastKnownLocation != null && System.currentTimeMillis() - lastKnownLocation.time < 30_000L) {
+        cont.resume(lastKnownLocation)
+        return@suspendCancellableCoroutine
+    }
+
+    val provider = providers.firstOrNull()
+    if (provider == null) {
+        cont.resume(lastKnownLocation)
+        return@suspendCancellableCoroutine
+    }
+
+    val listener = object : LocationListener {
+        override fun onLocationChanged(location: Location) {
+            if (cont.isActive) cont.resume(location)
+            locationManager.removeUpdates(this)
+        }
+
+        @Deprecated("Deprecated in Android API")
+        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+
+        override fun onProviderEnabled(provider: String) = Unit
+
+        override fun onProviderDisabled(provider: String) = Unit
+    }
+
+    runCatching {
+        locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+    }.onFailure {
+        if (cont.isActive) cont.resume(lastKnownLocation)
+    }
+
+    cont.invokeOnCancellation {
+        locationManager.removeUpdates(listener)
     }
 }

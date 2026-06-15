@@ -5,6 +5,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -26,7 +29,8 @@ data class DriverRoute(
     val routeName: String,
     val scheduledTime: String,
     val totalSeats: Int,
-    val stops: List<String>
+    val stops: List<String>,
+    val busId: Long? = null
 )
 
 // ── 목 데이터 ─────────────────────────────────────────────────
@@ -37,27 +41,32 @@ val mockDriverRoutes = listOf(
         routeName     = "경기광주역 → 외대(글)",
         scheduledTime = "08:30",
         totalSeats    = 45,
-        stops         = listOf("경기광주역(기점)", "기숙사", "백년관", "인경관(종점)")
+        stops         = listOf("경기광주역(기점)", "기숙사", "백년관", "인경관(종점)"),
+        busId         = 1
     ),
     DriverRoute(
         id            = "route_2",
         routeName     = "외대(글) → 경기광주역",
         scheduledTime = "13:00",
         totalSeats    = 45,
-        stops         = listOf("인경관(기점)", "백년관", "기숙사", "경기광주역(종점)")
+        stops         = listOf("인경관(기점)", "백년관", "기숙사", "경기광주역(종점)"),
+        busId         = 2
     ),
     DriverRoute(
         id            = "route_3",
         routeName     = "판교역 → 외대(글)",
         scheduledTime = "17:30",
         totalSeats    = 45,
-        stops         = listOf("판교역(기점)", "성남역", "서현역", "외대-글(종점)")
+        stops         = listOf("판교역(기점)", "성남역", "서현역", "외대-글(종점)"),
+        busId         = 3
     )
 )
 
 // ── ViewModel ────────────────────────────────────────────────
 
-class DriverViewModel : ViewModel() {
+class DriverViewModel(
+    private val shuttleRepository: ShuttleRepository = ShuttleRepository()
+) : ViewModel() {
 
     var selectedRoute by mutableStateOf<DriverRoute?>(null)
         private set
@@ -77,6 +86,9 @@ class DriverViewModel : ViewModel() {
     var operationMessage by mutableStateOf("출발 전입니다")
         private set
 
+    var lastGpsText by mutableStateOf<String?>(null)
+        private set
+
     fun selectRoute(route: DriverRoute) {
         selectedRoute = route
         reset()
@@ -87,12 +99,31 @@ class DriverViewModel : ViewModel() {
         reset()
     }
 
-    fun startOperation() {
+    fun startOperation(latitude: Double, longitude: Double) {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+        val route = selectedRoute
         actualDepartureTime = now
         operationState = OperationState.OPERATING
         isGpsTracking = true
-        operationMessage = "GPS 위치와 좌석 수를 전송 중입니다"
+        lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+        operationMessage = "GPS 위치를 서버에 전송 중입니다"
+
+        val busId = route?.busId ?: route?.id?.digitsAsLong() ?: 1L
+        viewModelScope.launch {
+            shuttleRepository.postDriverLocation(
+                busId = busId,
+                latitude = latitude,
+                longitude = longitude
+            ).onSuccess {
+                operationMessage = "GPS 위치가 서버에 전송되었습니다"
+            }.onFailure { throwable ->
+                operationMessage = "GPS 전송 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
+            }
+        }
+    }
+
+    fun setGpsStartError(message: String) {
+        operationMessage = message
     }
 
     fun endOperation() {
@@ -122,5 +153,10 @@ class DriverViewModel : ViewModel() {
         actualDepartureTime = null
         isGpsTracking       = false
         operationMessage    = "출발 전입니다"
+        lastGpsText         = null
     }
+}
+
+private fun String.digitsAsLong(): Long? {
+    return filter { it.isDigit() }.takeIf { it.isNotBlank() }?.toLongOrNull()
 }

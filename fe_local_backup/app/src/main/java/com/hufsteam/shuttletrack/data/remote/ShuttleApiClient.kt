@@ -13,7 +13,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object ShuttleApiClient {
-    const val BASE_URL: String = "http://13.209.95.60:8080"
+    const val BASE_URL: String = RetrofitClient.BASE_URL
     private const val CONNECT_TIMEOUT_MS = 5_000
     private const val READ_TIMEOUT_MS = 8_000
 
@@ -42,6 +42,7 @@ object ShuttleApiClient {
         runCatching {
             val normalizedPath = if (path.startsWith("/")) path else "/$path"
             val boundary = "----HufsBusBoundary${System.currentTimeMillis()}"
+            val authToken = token ?: TokenStore.accessToken
             val connection = (URL(BASE_URL + normalizedPath).openConnection() as HttpURLConnection).apply {
                 requestMethod = method
                 connectTimeout = CONNECT_TIMEOUT_MS
@@ -49,7 +50,7 @@ object ShuttleApiClient {
                 doOutput = true
                 setRequestProperty("Accept", "application/json")
                 setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                token?.takeIf { it.isNotBlank() }?.let { setRequestProperty("Authorization", "Bearer $it") }
+                authToken?.takeIf { it.isNotBlank() }?.let { setRequestProperty("Authorization", "Bearer $it") }
             }
 
             try {
@@ -79,13 +80,14 @@ object ShuttleApiClient {
 
     private fun request(method: String, path: String, token: String?, body: String?): String? {
         val normalizedPath = if (path.startsWith("/")) path else "/$path"
+        val authToken = token ?: TokenStore.accessToken
         val connection = (URL(BASE_URL + normalizedPath).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = CONNECT_TIMEOUT_MS
             readTimeout = READ_TIMEOUT_MS
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Content-Type", "application/json")
-            token?.takeIf { it.isNotBlank() }?.let { setRequestProperty("Authorization", "Bearer $it") }
+            authToken?.takeIf { it.isNotBlank() }?.let { setRequestProperty("Authorization", "Bearer $it") }
             if (body != null) doOutput = true
         }
 

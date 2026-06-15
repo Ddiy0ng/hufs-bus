@@ -140,8 +140,8 @@ fun StudentMainScreen(
     studentBusViewModel: StudentBusViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
     val studentUiState = studentBusViewModel.uiState
-    val baseOffCampusSchedules = studentUiState.offCampusSchedules.ifEmpty { offCampusSchedules }
-    val baseOnCampusSchedules = studentUiState.onCampusSchedules.ifEmpty { onCampusSchedules }
+    val baseOffCampusSchedules = studentUiState.offCampusSchedules
+    val baseOnCampusSchedules = studentUiState.onCampusSchedules
     val liveOffCampusSchedules = baseOffCampusSchedules.withLivePassengerState(driverViewModel)
     val liveOnCampusSchedules = baseOnCampusSchedules.withLivePassengerState(driverViewModel)
     val favoriteSchedules = studentUiState.favoriteSchedules.map { favorite ->
@@ -149,7 +149,7 @@ fun StudentMainScreen(
     }
     var currentScreen by remember { mutableStateOf(StudentScreen.TIMETABLE) }
     var selectedTab by remember { mutableStateOf(StudentTab.TIMETABLE) }
-    var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.first()) }
+    var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.firstOrNull() ?: offCampusSchedules.first()) }
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
     val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
     val liveRouteDetail = (studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule))
@@ -287,7 +287,8 @@ private fun BusSchedule.toDriverRoute(): DriverRoute {
         routeName = routeName,
         scheduledTime = departureTime,
         totalSeats = totalSeats,
-        stops = stops
+        stops = stops,
+        busId = id.toLong()
     )
 }
 
