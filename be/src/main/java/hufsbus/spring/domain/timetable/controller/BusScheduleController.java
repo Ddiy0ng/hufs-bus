@@ -18,11 +18,15 @@ import java.util.List;
 public class BusScheduleController {
 
     private final BusScheduleService busScheduleService;
+    private final Object timetableUploadLock = new Object();
+
 
     @PostMapping("/timetable")
     public ResponseEntity<ApiResponseDto<Void>> createTimetable(@RequestParam(value = "file") MultipartFile multipartFile) {
 
-        busScheduleService.createTimetables(multipartFile);
+        synchronized (timetableUploadLock) {
+            busScheduleService.createTimetables(multipartFile);
+        }
 
         return ResponseEntity.ok(ApiResponseDto.success("시간표를 성공적으로 업로드했습니다."));
     }

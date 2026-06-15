@@ -44,7 +44,7 @@ public class FavoriteController {
         );
     }
 
-    @DeleteMapping("favorite")
+    @DeleteMapping("/favorite")
     public ResponseEntity<ApiResponseDto<Void>> deleteFavorite(
             @AuthenticationPrincipal Long userId,
             @RequestParam Long favoriteId,

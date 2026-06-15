@@ -17,7 +17,7 @@ import hufsbus.spring.domain.timetable.timetableEnum.InOutCampusEnum;
 import hufsbus.spring.domain.util.FileUpload;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -182,24 +182,31 @@ public class BusScheduleService {
 
 
     /*-----------시간표 조건 검색-----------*/
-    @Transactional
+    @Transactional(readOnly = true)
     public List<BusRouteResponseDto> searchBusRoutes(String inOutCampusValue) {
 
         InOutCampusEnum inOutCampus = getDefaultOrSearchedInOutCampusValue(inOutCampusValue);
 
         List<BusRoute> busRouteList = busRouteRepository.findByInOutCampusOrderByIdAsc(inOutCampus);
 
-        List<BusRouteResponseDto> busRouteResponseDtoList = new ArrayList<>();
-
-        for (BusRoute value : busRouteList) {
-            List<BusStop> busStopList = busStopRepository.findByBusRouteOrderByStopOrderAsc(value);
-            busRouteResponseDtoList.add(BusRouteResponseDto.of(value, busStopList));
+        if (busRouteList.isEmpty()) {
+            return List.of();
         }
 
-        return busRouteResponseDtoList;
+        List<BusStop> busStopList = busStopRepository.findAllByBusRoutes(busRouteList);
+
+        Map<Long, List<BusStop>> busStopMap = busStopList.stream()
+                .collect(Collectors.groupingBy(busStop -> busStop.getBusRoute().getId()));
+
+        return busRouteList.stream()
+                .map(busRoute -> BusRouteResponseDto.of(
+                        busRoute,
+                        busStopMap.getOrDefault(busRoute.getId(), List.of())
+                ))
+                .toList();
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
     public List<TimetableResponseDto> searchTimetables(String inOutCampusValue, Long routeIdValue, Integer startTimeValue) {
 
         InOutCampusEnum inOutCampus = getDefaultOrSearchedInOutCampusValue(inOutCampusValue);
@@ -207,18 +214,24 @@ public class BusScheduleService {
         LocalTime startAt = null;
         LocalTime endAt = null;
 
-        if  (startTimeValue != null) {
-
+        if (startTimeValue != null) {
             startAt = LocalTime.of(startTimeValue, 0);
             endAt = startAt.plusHours(1);
         }
 
         List<Timetable> timetableList = timetableRepository.searchTimetables(inOutCampus, routeIdValue, startAt, endAt);
 
+        Map<Long, List<BusStop>> busStopCache = new HashMap<>();
         List<TimetableResponseDto> timetableResponseDtoList = new ArrayList<>();
 
         for (Timetable value : timetableList) {
-            List<BusStop> busStopList = busStopRepository.findByBusRouteOrderByStopOrderAsc(value.getBusRoute());
+            BusRoute busRoute = value.getBusRoute();
+
+            List<BusStop> busStopList = busStopCache.computeIfAbsent(
+                    busRoute.getId(),
+                    id -> busStopRepository.findByBusRouteOrderByStopOrderAsc(busRoute)
+            );
+
             timetableResponseDtoList.add(TimetableResponseDto.of(value, busStopList));
         }
 

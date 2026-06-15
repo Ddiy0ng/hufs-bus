@@ -36,8 +36,13 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/terms/**").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/timetable").hasAuthority("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/terms/**").hasAuthority("ADMIN")    // 약관 등록
+                        .requestMatchers(HttpMethod.GET, "/api/terms/**").permitAll()   // 약관 조회
+                        .requestMatchers("/api/favorite", "/api/favorite/**").authenticated()    // 즐겨찾기
+                        .requestMatchers(HttpMethod.POST, "/api/timetable").hasAuthority("ADMIN")   // 시간표 등록
+                        .requestMatchers(HttpMethod.PUT, "/api/timetable").hasAuthority("ADMIN")    // 시간표 변경
+                        .requestMatchers(HttpMethod.GET, "/api/timetable").permitAll()  // 시간표 조회
+                        .requestMatchers(HttpMethod.GET, "/api/inoutcampus").permitAll()    // 경로 조회
                         .requestMatchers(HttpMethod.PATCH, "/api/timetable/**").hasAuthority("DRIVER")
                         .requestMatchers(HttpMethod.POST, "/api/driver/location").hasAuthority("DRIVER")
                         .requestMatchers("/api/users/**").authenticated()

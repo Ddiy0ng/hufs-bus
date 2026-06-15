@@ -15,7 +15,7 @@ import hufsbus.spring.domain.user.entity.User;
 import hufsbus.spring.domain.user.repository.UserRepository;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
