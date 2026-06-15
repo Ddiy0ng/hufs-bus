@@ -153,8 +153,12 @@ class StudentBusRepository(
     }
 
     suspend fun loadRouteDetail(schedule: BusSchedule): RouteDetail {
-        val liveEta = shuttleRepository.getLiveEta(schedule.id.toLong()).getOrNull()
         val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+        val liveEta = if (busStatus?.status?.trim()?.uppercase() == "RUNNING") {
+            shuttleRepository.getLiveEta(schedule.id.toLong()).getOrNull()
+        } else {
+            null
+        }
         if (liveEta == null && busStatus == null && schedule.routeStops.isEmpty()) {
             return mockRouteDetailFor(schedule)
         }
@@ -234,6 +238,7 @@ class StudentBusRepository(
             liveEta?.busLatitude,
             liveEta?.busLat,
             liveEta?.vehicleLatitude,
+            liveEta?.currentLocation?.latitude,
             liveEta?.latitude,
             liveEta?.lat
         )
@@ -241,6 +246,7 @@ class StudentBusRepository(
             liveEta?.busLongitude,
             liveEta?.busLng,
             liveEta?.vehicleLongitude,
+            liveEta?.currentLocation?.longitude,
             liveEta?.longitude,
             liveEta?.lng
         )
@@ -251,7 +257,7 @@ class StudentBusRepository(
             liveEta?.progressIndex
         ) ?: estimateProgressFromCoordinates(stopPoints, busLatitude, busLongitude) ?: currentIndex.toFloat()
 
-        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats, busStatus?.currentSeats)
+        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats, busStatus?.currentSeats, liveEta?.currentSeats)
             ?: busStatus?.currentPassengers?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
             ?: busStatus?.passengerCount?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
             ?: schedule.remainingSeats
@@ -276,7 +282,7 @@ class StudentBusRepository(
             currentStopIndex = currentIndex.coerceIn(0, safeLastIndex),
             busProgressIndex = progressIndex.coerceIn(0f, safeLastIndex.toFloat()),
             plannedDeparture = schedule.departureTime,
-            actualDeparture = firstText(liveEta?.actualDeparture, liveEta?.actualTime, "미정"),
+            actualDeparture = firstText(liveEta?.actualDepartureTime, liveEta?.actualDeparture, liveEta?.actualTime, "미정"),
             etaText = eta,
             stopInfos = infos
         )

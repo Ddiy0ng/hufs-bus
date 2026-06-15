@@ -27,7 +27,10 @@ interface ApiService {
     ): JsonElement
 
     @GET("/api/timetables/{timetableId}/live")
-    suspend fun getLiveEta(@Path("timetableId") timetableId: Long): JsonElement
+    suspend fun getLiveEta(
+        @Path("timetableId") timetableId: Long,
+        @Query("token") token: String? = null
+    ): JsonElement
 
     @GET("/api/buses/{timetableId}/statuses")
     suspend fun getBusStatuses(@Path("timetableId") timetableId: Long): JsonElement

@@ -69,6 +69,12 @@ data class RouteStopResponse(
 )
 
 data class LiveEtaResponse(
+    val timetableId: Long? = null,
+    val plannedDepartureTime: String? = null,
+    val actualDepartureTime: String? = null,
+    val currentSeats: Int? = null,
+    val status: String? = null,
+    val currentLocation: LiveLocationResponse? = null,
     val etaText: String? = null,
     val estimatedMinutes: Int? = null,
     val etaMinutes: Int? = null,
@@ -97,6 +103,11 @@ data class LiveEtaResponse(
     val stops: List<JsonElement>? = null,
     val stopNames: List<JsonElement>? = null,
     val routeList: List<JsonElement>? = null
+)
+
+data class LiveLocationResponse(
+    val latitude: Double? = null,
+    val longitude: Double? = null
 )
 
 data class BusStatusResponse(

@@ -5,6 +5,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.hufsteam.shuttletrack.data.remote.ApiService
 import com.hufsteam.shuttletrack.data.remote.RetrofitClient
+import com.hufsteam.shuttletrack.data.remote.TokenStore
 import com.hufsteam.shuttletrack.data.remote.dto.BusStatusResponse
 import com.hufsteam.shuttletrack.data.remote.dto.BusTagRequest
 import com.hufsteam.shuttletrack.data.remote.dto.BusTagResponse
@@ -16,6 +17,12 @@ import com.hufsteam.shuttletrack.data.remote.dto.FavoriteResponse
 import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TermsResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class ShuttleRepository(
     private val apiService: ApiService = RetrofitClient.apiService,
@@ -28,7 +35,41 @@ class ShuttleRepository(
     }
 
     suspend fun getLiveEta(timetableId: Long): Result<LiveEtaResponse?> = runCatching {
-        apiService.getLiveEta(timetableId).payloadSingleOrListFirst()?.let { gson.decode<LiveEtaResponse>(it) }
+        withContext(Dispatchers.IO) {
+            val token = TokenStore.accessToken?.takeIf { it.isNotBlank() }
+            val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
+                .toHttpUrl()
+                .newBuilder()
+                .apply { token?.let { addQueryParameter("token", it) } }
+                .build()
+            val request = Request.Builder()
+                .url(url)
+                .header("Accept", "text/event-stream")
+                .build()
+            val liveClient = RetrofitClient.okHttpClient.newBuilder()
+                .readTimeout(2, TimeUnit.SECONDS)
+                .build()
+
+            liveClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("HTTP ${response.code}")
+                }
+
+                val source = response.body?.source() ?: return@withContext null
+                val dataLines = mutableListOf<String>()
+                repeat(40) {
+                    val line = source.readUtf8Line() ?: return@repeat
+                    if (line.startsWith("data:")) {
+                        dataLines += line.removePrefix("data:").trim()
+                    }
+                    if (line.isBlank() && dataLines.isNotEmpty()) {
+                        val payload = gson.fromJson(dataLines.joinToString(""), JsonElement::class.java)
+                        return@withContext payload.payloadSingleOrListFirst()?.let { gson.decode<LiveEtaResponse>(it) }
+                    }
+                }
+                null
+            }
+        }
     }
 
     suspend fun getBusStatuses(timetableId: Long): Result<BusStatusResponse?> = runCatching {
