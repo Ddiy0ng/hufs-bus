@@ -176,8 +176,9 @@ data class FavoriteResponse(
 )
 
 data class TermsResponse(
-    // TODO: 약관 PDF 조회 응답 형식이 확정되면 url/content 필드를 실제 명세에 맞춘다.
     val title: String? = null,
+    val name: String? = null,
+    val contentType: String? = null,
     val url: String? = null,
     val content: String? = null,
     val fileName: String? = null
