@@ -100,6 +100,15 @@ class DriverViewModel(
         reset()
     }
 
+    fun syncRunningRouteFromServer(route: DriverRoute, passengers: Int) {
+        selectedRoute = route
+        operationState = OperationState.OPERATING
+        passengerCount = passengers.coerceIn(0, route.totalSeats)
+        actualDepartureTime = route.scheduledTime
+        isGpsTracking = true
+        operationMessage = "서버에서 운행 중인 운행을 불러왔습니다"
+    }
+
     fun startOperation(latitude: Double, longitude: Double) {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val route = selectedRoute

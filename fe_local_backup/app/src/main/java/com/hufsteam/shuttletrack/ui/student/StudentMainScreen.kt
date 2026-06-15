@@ -56,13 +56,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hufsteam.shuttletrack.data.remote.ShuttleApiClient
+import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
 import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.data.model.UserRole
 import com.hufsteam.shuttletrack.ui.driver.DriverRoute
 import com.hufsteam.shuttletrack.ui.driver.DriverViewModel
 import com.hufsteam.shuttletrack.ui.driver.OperationState
-import com.hufsteam.shuttletrack.ui.driver.mockDriverRoutes
 import com.hufsteam.shuttletrack.ui.theme.AdminBadge
 import com.hufsteam.shuttletrack.ui.theme.AdminBadgeText
 import com.hufsteam.shuttletrack.ui.theme.DividerColor
@@ -234,7 +234,8 @@ fun StudentMainScreen(
                     onGoAdminRouteManagement = onGoAdminRouteManagement,
                     onGoAdminStopManagement = onGoAdminStopManagement,
                     onGoAdminTimetableManagement = onGoAdminTimetableManagement,
-                    driverViewModel = driverViewModel
+                    driverViewModel = driverViewModel,
+                    schedules = liveOffCampusSchedules + liveOnCampusSchedules
                 )
             }
 
@@ -1070,7 +1071,8 @@ private fun StudentMyPageContent(
     onGoAdminRouteManagement: () -> Unit,
     onGoAdminStopManagement: () -> Unit,
     onGoAdminTimetableManagement: () -> Unit,
-    driverViewModel: DriverViewModel
+    driverViewModel: DriverViewModel,
+    schedules: List<BusSchedule>
 ) {
     val role = viewModel.userRole ?: UserRole.STUDENT
     val roleLabel = when (role) {
@@ -1207,6 +1209,7 @@ private fun StudentMyPageContent(
 
                         AdminPassengerControlSection(
                             driverViewModel = driverViewModel,
+                            schedules = schedules,
                             onNotice = { noticeMessage = it }
                         )
                         Spacer(Modifier.height(24.dp))
@@ -1565,8 +1568,12 @@ private fun MyPageSectionHeader(title: String) {
 @Composable
 private fun AdminPassengerControlSection(
     driverViewModel: DriverViewModel,
+    schedules: List<BusSchedule>,
     onNotice: (String) -> Unit
 ) {
+    val scope = rememberCoroutineScope()
+    val shuttleRepository = remember { ShuttleRepository() }
+    var isRefreshingOperation by remember { mutableStateOf(false) }
     val route = driverViewModel.selectedRoute
     val operationState = driverViewModel.operationState
     val passengers = driverViewModel.passengerCount
@@ -1579,6 +1586,36 @@ private fun AdminPassengerControlSection(
         OperationState.COMPLETED -> "운행 완료"
     }
 
+    fun refreshRunningOperation(showNotice: Boolean) {
+        if (isRefreshingOperation) return
+        scope.launch {
+            isRefreshingOperation = true
+            findRunningAdminOperation(schedules, shuttleRepository)
+                .onSuccess { snapshot ->
+                    if (snapshot != null) {
+                        driverViewModel.syncRunningRouteFromServer(snapshot.route, snapshot.passengers)
+                        if (showNotice) {
+                            onNotice("운행 중인 시간표를 불러왔습니다")
+                        }
+                    } else if (showNotice) {
+                        onNotice("현재 운행 중인 시간표가 없습니다")
+                    }
+                }
+                .onFailure { throwable ->
+                    if (showNotice) {
+                        onNotice("운행 상태 조회 실패: ${throwable.message ?: "서버 응답 확인 필요"}")
+                    }
+                }
+            isRefreshingOperation = false
+        }
+    }
+
+    LaunchedEffect(schedules, route?.id, operationState) {
+        if (route == null || operationState != OperationState.OPERATING) {
+            refreshRunningOperation(showNotice = false)
+        }
+    }
+
     MyPageSectionHeader("탑승 수 수기 집계")
     Text(
         "NFC 장비 입력을 대체하는 관리자용 수기 집계입니다.",
@@ -1588,18 +1625,25 @@ private fun AdminPassengerControlSection(
     Spacer(Modifier.height(12.dp))
 
     if (route == null) {
-        Text("현재 선택된 운행이 없습니다.", fontSize = 13.sp, color = Color(0xFF777777))
+        Text(
+            if (isRefreshingOperation) "운행 중인 시간표를 확인하고 있습니다." else "현재 운행 중인 시간표가 없습니다.",
+            fontSize = 13.sp,
+            color = Color(0xFF777777)
+        )
         Spacer(Modifier.height(10.dp))
-        mockDriverRoutes.forEach { candidate ->
-            AdminRouteSelectRow(
-                route = candidate,
-                onClick = {
-                    driverViewModel.selectRoute(candidate)
-                    onNotice("수기 집계 대상 운행이 선택되었습니다")
-                }
-            )
-            Spacer(Modifier.height(8.dp))
-        }
+        AdminPassengerButton(
+            text = if (isRefreshingOperation) "조회 중" else "운행 상태 새로고침",
+            enabled = !isRefreshingOperation,
+            filled = false,
+            modifier = Modifier.fillMaxWidth(),
+            onClick = { refreshRunningOperation(showNotice = true) }
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "기사가 시간표에서 운행 시작하기를 누르면 이곳에 해당 운행이 자동으로 표시됩니다.",
+            fontSize = 12.sp,
+            color = Color(0xFF999999)
+        )
         return
     }
 
@@ -1655,7 +1699,7 @@ private fun AdminPassengerControlSection(
                     modifier = Modifier.weight(1f),
                     onClick = {
                         driverViewModel.decreasePassengers()
-                        onNotice("하차 인원이 반영되었습니다")
+                        onNotice("하차 요청을 서버에 전송했습니다")
                     }
                 )
                 AdminPassengerButton(
@@ -1665,7 +1709,7 @@ private fun AdminPassengerControlSection(
                     modifier = Modifier.weight(1f),
                     onClick = {
                         driverViewModel.increasePassengers()
-                        onNotice("탑승 인원이 반영되었습니다")
+                        onNotice("탑승 요청을 서버에 전송했습니다")
                     }
                 )
             }
@@ -1681,14 +1725,20 @@ private fun AdminPassengerControlSection(
 
             Spacer(Modifier.height(12.dp))
             AdminPassengerButton(
-                text = "운행 다시 선택",
+                text = if (isRefreshingOperation) "조회 중" else "운행 상태 새로고침",
                 enabled = !isOperating,
                 filled = false,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     driverViewModel.clearSelectedRoute()
-                    onNotice("수기 집계 대상을 다시 선택할 수 있습니다")
+                    refreshRunningOperation(showNotice = true)
                 }
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                driverViewModel.operationMessage,
+                fontSize = 12.sp,
+                color = Color(0xFF999999)
             )
             if (isOperating) {
                 Spacer(Modifier.height(8.dp))
@@ -1700,6 +1750,43 @@ private fun AdminPassengerControlSection(
             }
         }
     }
+}
+
+private data class AdminOperationSnapshot(
+    val route: DriverRoute,
+    val passengers: Int
+)
+
+private suspend fun findRunningAdminOperation(
+    schedules: List<BusSchedule>,
+    shuttleRepository: ShuttleRepository
+): Result<AdminOperationSnapshot?> = runCatching {
+    schedules.distinctBy { it.id }.forEach { schedule ->
+        val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull() ?: return@forEach
+        if (!busStatus.status.isRunningBusStatus()) return@forEach
+
+        val totalSeats = busStatus.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+        val serverRemainingSeats = busStatus.currentSeats
+            ?: busStatus.remainingSeats
+            ?: busStatus.availableSeats
+        val serverPassengers = busStatus.currentPassengers
+            ?: busStatus.passengerCount
+            ?: serverRemainingSeats?.let { totalSeats - it }
+            ?: (totalSeats - schedule.remainingSeats)
+
+        val passengers = serverPassengers.coerceIn(0, totalSeats)
+        val route = schedule
+            .copy(totalSeats = totalSeats, remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats))
+            .toDriverRoute()
+            .copy(busId = busStatus.busId ?: schedule.id.toLong())
+
+        return@runCatching AdminOperationSnapshot(route = route, passengers = passengers)
+    }
+    null
+}
+
+private fun String?.isRunningBusStatus(): Boolean {
+    return this?.trim()?.uppercase() == "RUNNING"
 }
 
 @Composable
