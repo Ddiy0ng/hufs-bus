@@ -24,8 +24,9 @@ class AuthViewModel : ViewModel() {
     var emailError      by mutableStateOf<String?>(null);      private set
     var passwordError   by mutableStateOf<String?>(null);      private set
     var signupSuccess   by mutableStateOf(false);              private set
+    private var devLoginEmail by mutableStateOf<String?>(null)
 
-    val currentEmail: String get() = auth.currentUser?.email ?: ""
+    val currentEmail: String get() = devLoginEmail ?: auth.currentUser?.email ?: ""
 
     // ── 앱 시작: 자동 로그인 체크 ──────────────────────────────
     fun checkCurrentUser(onResult: (Boolean) -> Unit) {
@@ -43,6 +44,25 @@ class AuthViewModel : ViewModel() {
         }
         // @가 없으면 @hufs.ac.kr 자동 추가 (기사/관리자 단축 ID 지원)
         val resolvedEmail = if (email.contains("@")) email.trim() else "${email.trim()}@hufs.ac.kr"
+
+        // 개발 테스트용 관리자 계정: 백엔드 role 연동 전 UI 확인용
+        if (resolvedEmail.equals("admin@hufs.ac.kr", ignoreCase = true) && password == "admin1234") {
+            devLoginEmail = "admin@hufs.ac.kr"
+            userRole = UserRole.ADMIN
+            isLoading = false
+            onSuccess()
+            return
+        }
+
+        // 개발 테스트용 기사 계정: 백엔드 role 연동 전 기사 UI 확인용
+        if (resolvedEmail.equals("driver@hufs.ac.kr", ignoreCase = true) && password == "driver1234") {
+            devLoginEmail = "driver@hufs.ac.kr"
+            userRole = UserRole.DRIVER
+            isLoading = false
+            onSuccess()
+            return
+        }
+
         isLoading = true
 
         // 10초 타임아웃
@@ -133,6 +153,7 @@ class AuthViewModel : ViewModel() {
     // ── 로그아웃 ───────────────────────────────────────────────
     fun logout() {
         auth.signOut()
+        devLoginEmail = null
         userRole      = null
         signupSuccess = false
         clearErrors()

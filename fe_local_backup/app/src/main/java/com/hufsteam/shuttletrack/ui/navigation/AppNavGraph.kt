@@ -1,6 +1,7 @@
 package com.hufsteam.shuttletrack.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
@@ -55,7 +56,8 @@ fun AppNavGraph(
             LoginScreen(
                 viewModel      = authViewModel,
                 onLoginSuccess = { navigateByRole(navController, authViewModel.userRole) },
-                onGoSignUp     = { navController.navigate(Screen.SignUp.route) }
+                onGoSignUp     = { navController.navigate(Screen.SignUp.route) },
+                onBack         = { navController.popBackStack() }
             )
         }
 
@@ -68,14 +70,25 @@ fun AppNavGraph(
                     }
                 },
                 onGoServiceTerms = { navController.navigate(Screen.ServiceTerms.route) },
-                onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) }
+                onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) },
             )
         }
 
         composable(Screen.StudentMain.route) {
             StudentMainScreen(
                 viewModel = authViewModel,
-                onLogout  = { doLogout(navController, authViewModel) }
+                onLogout  = { doLogout(navController, authViewModel) },
+                onGoServiceTerms = { navController.navigate(Screen.ServiceTerms.route) },
+                onGoPrivacyTerms = { navController.navigate(Screen.PrivacyTerms.route) },
+                onGoDriverTimetable = { navController.navigate(Screen.Timetable.createRoute("driver")) },
+                onGoDriverOperation = { route ->
+                    driverViewModel.selectRoute(route)
+                    navController.navigate(Screen.DriverOperation.route)
+                },
+                onGoAdminRouteManagement = { navController.navigate(Screen.RouteManagement.route) },
+                onGoAdminStopManagement = { navController.navigate(Screen.StopManagement.route) },
+                onGoAdminTimetableManagement = { navController.navigate(Screen.TimetableManagement.route) },
+                driverViewModel = driverViewModel
             )
         }
 
@@ -90,10 +103,16 @@ fun AppNavGraph(
         }
 
         composable(Screen.DriverOperation.route) {
-            DriverOperationScreen(
-                driverViewModel = driverViewModel,
-                onBack          = { navController.popBackStack() }
-            )
+            if (authViewModel.userRole != UserRole.DRIVER) {
+                LaunchedEffect(authViewModel.userRole) {
+                    navController.popBackStack()
+                }
+            } else {
+                DriverOperationScreen(
+                    driverViewModel = driverViewModel,
+                    onBack          = { navController.popBackStack() }
+                )
+            }
         }
 
         composable(Screen.AdminMain.route) {
@@ -141,19 +160,22 @@ fun AppNavGraph(
             TimetableScreen(
                 role          = role,
                 onGoMyPage    = { navController.popBackStack() },
-                onGoFavorites = {}
+                onGoFavorites = {},
+                onDriverScheduleClick = { route ->
+                    if (role == "driver" && authViewModel.userRole == UserRole.DRIVER) {
+                        driverViewModel.selectRoute(route)
+                        navController.navigate(Screen.DriverOperation.route)
+                    }
+                }
             )
         }
     }
 }
 
 private fun navigateByRole(navController: NavController, role: UserRole?) {
-    val route = when (role) {
-        UserRole.DRIVER -> Screen.DriverMain.route
-        UserRole.ADMIN  -> Screen.AdminMain.route
-        else            -> Screen.StudentMain.route
+    navController.navigate(Screen.StudentMain.route) {
+        popUpTo(0) { inclusive = true }
     }
-    navController.navigate(route) { popUpTo(0) { inclusive = true } }
 }
 
 private fun doLogout(navController: NavController, viewModel: AuthViewModel) {

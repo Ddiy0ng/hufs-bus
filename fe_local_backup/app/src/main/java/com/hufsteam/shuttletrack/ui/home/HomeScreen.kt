@@ -32,6 +32,6 @@ fun HomeScreen(
         Spacer(Modifier.height(120.dp))
         ShuttleButton(text = "회원가입", enabled = true, onClick = onGoSignUp)
         Spacer(Modifier.height(16.dp))
-        ShuttleButton(text = "로그인",   enabled = true, onClick = onGoLogin)
+        ShuttleButton(text = "로그인", enabled = true, onClick = onGoLogin)
     }
 }

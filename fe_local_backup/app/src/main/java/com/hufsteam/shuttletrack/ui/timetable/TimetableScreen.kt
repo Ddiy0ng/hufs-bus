@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hufsteam.shuttletrack.ui.driver.BottomNavBar
 import com.hufsteam.shuttletrack.ui.driver.BottomTab
+import com.hufsteam.shuttletrack.ui.driver.DriverRoute
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 
 // ── 데이터 모델 ─────────────────────────────────────────────────
@@ -90,7 +91,8 @@ private val hours = listOf(8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18)
 fun TimetableScreen(
     role: String = "driver",
     onGoMyPage: () -> Unit,
-    onGoFavorites: () -> Unit = {}
+    onGoFavorites: () -> Unit = {},
+    onDriverScheduleClick: (DriverRoute) -> Unit = {}
 ) {
     var selectedTab     by remember { mutableStateOf(0) }  // 0=교내, 1=교외
     val routes          = if (selectedTab == 0) campusRoutes else offCampusRoutes
@@ -234,7 +236,11 @@ fun TimetableScreen(
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(entries) { entry ->
-                        TimetableCard(entry)
+                        TimetableCard(
+                            entry = entry,
+                            enabled = role == "driver",
+                            onClick = { onDriverScheduleClick(selectedRoute.toDriverRoute(entry)) }
+                        )
                     }
                     item { Spacer(Modifier.height(8.dp)) }
                 }
@@ -256,13 +262,18 @@ fun TimetableScreen(
 }
 
 @Composable
-private fun TimetableCard(entry: TimetableEntry) {
+private fun TimetableCard(
+    entry: TimetableEntry,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(Color.White)
             .border(1.dp, Color(0xFFEEEEEE), RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Column {
@@ -288,5 +299,30 @@ private fun TimetableCard(entry: TimetableEntry) {
                 color    = Color(0xFF888888)
             )
         }
+    }
+}
+
+private fun RouteInfo.toDriverRoute(entry: TimetableEntry): DriverRoute {
+    return DriverRoute(
+        id = "${label}_${entry.time}".filter { it.isLetterOrDigit() || it == '_' },
+        routeName = label,
+        scheduledTime = entry.time,
+        totalSeats = 45,
+        stops = stopsForRoute(label)
+    )
+}
+
+private fun stopsForRoute(label: String): List<String> {
+    return when {
+        label.contains("경기광주역") && label.contains("외대") ->
+            listOf("경기광주역(기점)", "기숙사", "백년관", "인경관(종점)")
+        label.contains("판교역") && label.startsWith("판교역") ->
+            listOf("판교역(기점)", "성남역", "서현역", "외대-글(종점)")
+        label.contains("판교역") ->
+            listOf("외대-글(기점)", "서현역", "성남역", "판교역(종점)")
+        label.contains("지석묘") ->
+            listOf("지석묘(기점)", "기숙사", "도서관", "인경관(종점)")
+        else ->
+            listOf("기점", "경유지", "종점")
     }
 }

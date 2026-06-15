@@ -1,5 +1,7 @@
 package com.hufsteam.shuttletrack.ui.terms
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -21,15 +23,19 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hufsteam.shuttletrack.data.remote.ShuttleApiClient
 import com.hufsteam.shuttletrack.ui.theme.DividerColor
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 
@@ -40,9 +46,14 @@ private val BorderColor = Color(0xFFCCCCCC)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TermsScreen(type: TermsType, onBack: () -> Unit) {
+    val context = LocalContext.current
     val title = when (type) {
         TermsType.PRIVACY -> "개인정보 수집 및 이용"
         TermsType.SERVICE -> "서비스 이용 약관"
+    }
+    val pdfPath = when (type) {
+        TermsType.PRIVACY -> "/api/terms/privacy/view"
+        TermsType.SERVICE -> "/api/terms/service/view"
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
@@ -61,6 +72,17 @@ fun TermsScreen(type: TermsType, onBack: () -> Unit) {
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp)
         ) {
+            Button(
+                onClick = {
+                    val url = ShuttleApiClient.absoluteUrl(pdfPath)
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = NavyBlue),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("PDF로 보기", color = Color.White)
+            }
+            Spacer(Modifier.height(20.dp))
             when (type) {
                 TermsType.PRIVACY -> PrivacyContent()
                 TermsType.SERVICE -> ServiceContent()
