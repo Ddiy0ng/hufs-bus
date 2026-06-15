@@ -969,31 +969,38 @@ private fun StudentFavoritesContent(
     }
 
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
-        Spacer(Modifier.height(20.dp))
-        Text(
-            "즐겨찾기",
-            modifier = Modifier.align(Alignment.CenterHorizontally),
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.Black
-        )
-        Spacer(Modifier.height(18.dp))
-
-        Row(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(0.dp)
+                .height(54.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                "즐겨찾기",
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black
+            )
+        }
+
+        TabRow(
+            selectedTabIndex = campusOptions.indexOf(selectedCampus).coerceAtLeast(0),
+            containerColor = Color.White,
+            contentColor = NavyBlue
         ) {
             campusOptions.forEach { option ->
-                FavoriteCampusTab(
-                    label = option,
+                Tab(
                     selected = selectedCampus == option,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    selectedCampus = option
-                }
+                    onClick = { selectedCampus = option },
+                    text = {
+                        Text(
+                            option,
+                            fontSize = 14.sp,
+                            fontWeight = if (selectedCampus == option) FontWeight.Bold else FontWeight.Normal,
+                            color = if (selectedCampus == option) NavyBlue else Color(0xFF9DA3AD)
+                        )
+                    }
+                )
             }
         }
 
@@ -1004,16 +1011,20 @@ private fun StudentFavoritesContent(
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(Modifier.height(12.dp))
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(dayOptions) { day ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                dayOptions.forEach { day ->
                     FavoriteDayChip(
                         label = shortDayLabel(day),
                         selected = selectedDay == day,
+                        modifier = Modifier.weight(1f),
                         onClick = { selectedDay = day }
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(14.dp))
 
             if (favorites.isEmpty() || visibleFavorites.isEmpty()) {
                 Box(
@@ -1034,56 +1045,56 @@ private fun StudentFavoritesContent(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 20.dp)
                 ) {
-                items(visibleFavorites) { favorite ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().clickable { onScheduleClick(favorite) },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                    items(visibleFavorites) { favorite ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth().clickable { onScheduleClick(favorite) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    favorite.schedule.routeName,
-                                    fontSize = 13.sp,
-                                    color = NavyBlue,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(Modifier.height(10.dp))
-                                Row(verticalAlignment = Alignment.Bottom) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        favorite.schedule.departureTime,
-                                        fontSize = 21.sp,
-                                        color = Color(0xFF1F2430),
+                                        favorite.schedule.routeName,
+                                        fontSize = 13.sp,
+                                        color = NavyBlue,
                                         fontWeight = FontWeight.Bold
                                     )
-                                    Spacer(Modifier.width(6.dp))
+                                    Spacer(Modifier.height(10.dp))
+                                    Row(verticalAlignment = Alignment.Bottom) {
+                                        Text(
+                                            favorite.schedule.departureTime,
+                                            fontSize = 21.sp,
+                                            color = Color(0xFF1F2430),
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            "(${favorite.schedule.remainingSeats}석)",
+                                            color = Color(0xFFE53935),
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Spacer(Modifier.height(10.dp))
                                     Text(
-                                        "(${favorite.schedule.remainingSeats}석)",
-                                        color = Color(0xFFE53935),
-                                        fontSize = 18.sp,
-                                        fontWeight = FontWeight.Bold
+                                        "탑승 정류장 | ${favorite.schedule.currentLocation}",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF8A8F98)
                                     )
                                 }
-                                Spacer(Modifier.height(10.dp))
-                                Text(
-                                    "탑승 정류장 | ${favorite.schedule.currentLocation}",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFF8A8F98)
+                                Icon(
+                                    Icons.Filled.Star,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFC400),
+                                    modifier = Modifier.size(34.dp)
                                 )
                             }
-                            Icon(
-                                Icons.Filled.Star,
-                                contentDescription = null,
-                                tint = Color(0xFFFFC400),
-                                modifier = Modifier.size(34.dp)
-                            )
                         }
                     }
-                }
                 }
             }
         }
@@ -1091,7 +1102,7 @@ private fun StudentFavoritesContent(
 }
 
 @Composable
-private fun FavoriteCampusTab(
+private fun FavoriteDayChip(
     label: String,
     selected: Boolean,
     modifier: Modifier = Modifier,
@@ -1099,35 +1110,6 @@ private fun FavoriteCampusTab(
 ) {
     Box(
         modifier = modifier
-            .fillMaxHeight()
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            label,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-            color = if (selected) NavyBlue else Color(0xFF9DA3AD)
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(if (selected) 2.dp else 1.dp)
-                .background(if (selected) NavyBlue else DividerColor)
-        )
-    }
-}
-
-@Composable
-private fun FavoriteDayChip(
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .width(42.dp)
             .height(34.dp)
             .clip(RoundedCornerShape(18.dp))
             .background(if (selected) NavyBlue else Color(0xFFECEFF4))
@@ -1137,7 +1119,7 @@ private fun FavoriteDayChip(
         Text(
             label,
             fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
             color = if (selected) Color.White else Color(0xFF9AA1AB)
         )
     }
