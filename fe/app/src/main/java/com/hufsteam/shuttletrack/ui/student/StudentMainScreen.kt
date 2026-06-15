@@ -86,7 +86,8 @@ data class BusSchedule(
     val remainingSeats: Int,
     val totalSeats: Int,
     val currentLocation: String,
-    val routeStops: List<String> = emptyList()
+    val routeStops: List<String> = emptyList(),
+    val campusType: String = "미분류"
 )
 
 data class FavoriteSchedule(
@@ -560,12 +561,16 @@ private fun StudentRouteStatusContent(
                     .width(95.dp)
                     .height(31.dp)
                     .clip(RoundedCornerShape(50.dp))
-                    .border(3.dp, Color(0xFFE2573B), RoundedCornerShape(50.dp))
+                    .border(3.dp, if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFFD8DEE8), RoundedCornerShape(50.dp))
                     .background(Color.White)
                     .padding(horizontal = 12.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("예상: ${routeDetail.etaText}", style = ShuttleRegularTextStyle, color = Color(0xFFE2573B))
+                Text(
+                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}" else "운행 전",
+                    style = ShuttleRegularTextStyle,
+                    color = if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFF999999)
+                )
             }
 
             BusIcon(size = 55.dp, modifier = Modifier.offset(x = 159.dp, y = 221.dp))
@@ -596,6 +601,7 @@ private fun StudentRouteStatusContent(
                     stops = stops,
                     busProgressIndex = busProgressIndex,
                     isCurvedRoute = isCurvedRoute,
+                    showBusMarker = routeDetail.isRunning,
                     onStopClick = { selectedStopIndex = it }
                 )
             }
@@ -690,15 +696,16 @@ private fun RouteProgressBar(
     stops: List<String>,
     busProgressIndex: Float,
     isCurvedRoute: Boolean,
+    showBusMarker: Boolean = true,
     onStopClick: (Int) -> Unit = {}
 ) {
     val navy = NavyBlue
     val inactive = Color(0xFFE3E7ED)
 
     if (isCurvedRoute && stops.size >= 7) {
-        CurvedBusRoute(stops = stops, busProgressIndex = busProgressIndex, navy = navy, inactive = inactive, onStopClick = onStopClick)
+        CurvedBusRoute(stops = stops, busProgressIndex = busProgressIndex, showBusMarker = showBusMarker, navy = navy, inactive = inactive, onStopClick = onStopClick)
     } else {
-        StraightBusRoute(stops = stops, busProgressIndex = busProgressIndex, navy = navy, inactive = inactive, onStopClick = onStopClick)
+        StraightBusRoute(stops = stops, busProgressIndex = busProgressIndex, showBusMarker = showBusMarker, navy = navy, inactive = inactive, onStopClick = onStopClick)
     }
 }
 
@@ -706,6 +713,7 @@ private fun RouteProgressBar(
 private fun StraightBusRoute(
     stops: List<String>,
     busProgressIndex: Float,
+    showBusMarker: Boolean,
     navy: Color,
     inactive: Color,
     onStopClick: (Int) -> Unit
@@ -749,12 +757,14 @@ private fun StraightBusRoute(
             )
         }
 
-        val markerX = startX + gap * clampedBus - 34.dp
-        BusLocationMarker(
-            modifier = Modifier.offset(x = markerX, y = lineY - 67.dp),
-            width = 70.dp,
-            height = 96.dp
-        )
+        if (showBusMarker) {
+            val markerX = startX + gap * clampedBus - 34.dp
+            BusLocationMarker(
+                modifier = Modifier.offset(x = markerX, y = lineY - 67.dp),
+                width = 70.dp,
+                height = 96.dp
+            )
+        }
 
         val labelWidth = if (stops.size >= 6) 58.dp else 68.dp
         val labelFontSize = if (stops.size >= 6) 10.sp else 11.sp
@@ -787,6 +797,7 @@ private fun StraightBusRoute(
 private fun CurvedBusRoute(
     stops: List<String>,
     busProgressIndex: Float,
+    showBusMarker: Boolean,
     navy: Color,
     inactive: Color,
     onStopClick: (Int) -> Unit
@@ -851,15 +862,17 @@ private fun CurvedBusRoute(
             )
         }
 
-        val markerPosition = interpolateCurvedRoutePoint(routePoints, clampedBus, topCorner, bottomCorner, sideIndex)
-        BusLocationMarker(
-            modifier = Modifier.offset(
-                x = markerPosition.first - 35.dp,
-                y = markerPosition.second - 69.dp
-            ),
-            width = 70.dp,
-            height = 96.dp
-        )
+        if (showBusMarker) {
+            val markerPosition = interpolateCurvedRoutePoint(routePoints, clampedBus, topCorner, bottomCorner, sideIndex)
+            BusLocationMarker(
+                modifier = Modifier.offset(
+                    x = markerPosition.first - 35.dp,
+                    y = markerPosition.second - 69.dp
+                ),
+                width = 70.dp,
+                height = 96.dp
+            )
+        }
 
         routePoints.forEachIndexed { index, point ->
             val labelXOffset = if (index == sideIndex) (-52).dp else (-32).dp
@@ -947,22 +960,64 @@ private fun StudentFavoritesContent(
     favorites: List<FavoriteSchedule>,
     onScheduleClick: (FavoriteSchedule) -> Unit
 ) {
+    var selectedCampus by remember { mutableStateOf("전체") }
+    var selectedDay by remember { mutableStateOf("전체") }
+    val campusOptions = listOf("전체", "교외", "교내")
+    val dayOptions = listOf("전체") + notificationDays
+    val visibleFavorites = favorites.filter { favorite ->
+        (selectedCampus == "전체" || favorite.schedule.campusType == selectedCampus) &&
+            (selectedDay == "전체" || selectedDay in favorite.days)
+    }
+
     Column(modifier = Modifier.fillMaxSize().background(Color.White).padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(18.dp))
         Text("즐겨찾기", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color.Black)
         Spacer(Modifier.height(12.dp))
 
-        if (favorites.isEmpty()) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(campusOptions) { option ->
+                FilterChip(
+                    selected = selectedCampus == option,
+                    onClick = { selectedCampus = option },
+                    label = { Text(option, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = NavyBlue,
+                        selectedLabelColor = Color.White
+                    )
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(dayOptions) { option ->
+                FilterChip(
+                    selected = selectedDay == option,
+                    onClick = { selectedDay = option },
+                    label = { Text(option, fontSize = 12.sp) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFFEFF3FB),
+                        selectedLabelColor = NavyBlue
+                    )
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+
+        if (favorites.isEmpty() || visibleFavorites.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("★", fontSize = 40.sp, color = Color(0xFFDDDDDD))
                     Spacer(Modifier.height(12.dp))
-                    Text("아직 추가된 즐겨찾기가 없습니다.", color = Color(0xFF999999), fontSize = 14.sp)
+                    Text(
+                        if (favorites.isEmpty()) "아직 추가된 즐겨찾기가 없습니다." else "선택한 분류의 즐겨찾기가 없습니다.",
+                        color = Color(0xFF999999),
+                        fontSize = 14.sp
+                    )
                 }
             }
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(favorites) { favorite ->
+                items(visibleFavorites) { favorite ->
                     Card(
                         modifier = Modifier.fillMaxWidth().clickable { onScheduleClick(favorite) },
                         shape = RoundedCornerShape(14.dp),
@@ -974,7 +1029,19 @@ private fun StudentFavoritesContent(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(favorite.schedule.routeName, fontSize = 13.sp, color = NavyBlue, fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(favorite.schedule.routeName, fontSize = 13.sp, color = NavyBlue, fontWeight = FontWeight.Bold)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        favorite.schedule.campusType,
+                                        fontSize = 11.sp,
+                                        color = Color.White,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(50.dp))
+                                            .background(if (favorite.schedule.campusType == "교내") Color(0xFF4E78C8) else Color(0xFF0B3F6D))
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
                                 Spacer(Modifier.height(6.dp))
                                 Row(verticalAlignment = Alignment.Bottom) {
                                     Text(favorite.schedule.departureTime, fontSize = 20.sp, fontWeight = FontWeight.Bold)
@@ -982,7 +1049,11 @@ private fun StudentFavoritesContent(
                                     Text("(${favorite.schedule.remainingSeats}석)", color = Color(0xFFE53935), fontWeight = FontWeight.Bold)
                                 }
                                 Spacer(Modifier.height(6.dp))
-                                Text(favorite.days.joinToString(" · "), fontSize = 12.sp, color = Color(0xFF777777))
+                                Text(
+                                    favorite.days.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: "요일 미설정",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF777777)
+                                )
                             }
                             Icon(Icons.Filled.Star, contentDescription = null, tint = Color(0xFFFFC400))
                         }
@@ -1046,15 +1117,13 @@ private fun FavoriteDaySheet(
             Spacer(Modifier.height(4.dp))
             Button(
                 onClick = { onSave(selectedDays) },
-                enabled = selectedDays.isNotEmpty(),
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NavyBlue,
-                    disabledContainerColor = Color(0xFFD9D9D9)
+                    containerColor = NavyBlue
                 )
             ) {
-                Text("설정하기", style = ShuttleRegularTextStyle, color = Color.White)
+                Text(if (selectedDays.isEmpty()) "즐겨찾기 해제하기" else "설정하기", style = ShuttleRegularTextStyle, color = Color.White)
             }
         }
     }

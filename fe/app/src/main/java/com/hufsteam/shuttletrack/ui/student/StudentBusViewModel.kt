@@ -32,7 +32,8 @@ data class RouteDetail(
     val plannedDeparture: String,
     val actualDeparture: String,
     val etaText: String,
-    val stopInfos: Map<String, StopArrivalInfo>
+    val stopInfos: Map<String, StopArrivalInfo>,
+    val isRunning: Boolean = false
 ) {
     fun infoFor(stopName: String): StopArrivalInfo {
         val normalized = stopName.replace("\n", " ")
@@ -83,16 +84,20 @@ class StudentBusViewModel(
     }
 
     fun saveFavorite(schedule: BusSchedule, days: Set<String>) {
-        if (days.isEmpty()) return
         viewModelScope.launch {
             val saved = repository.saveFavorite(schedule, days)
             if (saved) {
+                val refreshedFavorites = repository.loadFavorites()
                 uiState = uiState.copy(
-                    favoriteSchedules = uiState.favoriteSchedules
-                        .filterNot { it.schedule.id == schedule.id } + FavoriteSchedule(schedule, days)
+                    favoriteSchedules = if (refreshedFavorites.isNotEmpty() || days.isEmpty()) {
+                        refreshedFavorites
+                    } else {
+                        uiState.favoriteSchedules
+                            .filterNot { it.schedule.id == schedule.id } + FavoriteSchedule(schedule, days)
+                    }
                 )
             } else {
-                uiState = uiState.copy(errorMessage = "즐겨찾기 등록에 실패했습니다.")
+                uiState = uiState.copy(errorMessage = "즐겨찾기 설정에 실패했습니다.")
             }
         }
     }
@@ -100,9 +105,7 @@ class StudentBusViewModel(
     fun refreshFavorites() {
         viewModelScope.launch {
             val favorites = repository.loadFavorites()
-            if (favorites.isNotEmpty()) {
-                uiState = uiState.copy(favoriteSchedules = favorites)
-            }
+            uiState = uiState.copy(favoriteSchedules = favorites)
         }
     }
 
@@ -126,10 +129,10 @@ class StudentBusRepository(
         val onResult = shuttleRepository.getTimetable("IN_CAMPUS")
 
         val offSchedules = offResult.getOrNull()
-            ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOffCampusSchedules) }
+            ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOffCampusSchedules, "교외") }
             .orEmpty()
         val onSchedules = onResult.getOrNull()
-            ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOnCampusSchedules) }
+            ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOnCampusSchedules, "교내") }
             .orEmpty()
         val errorMessage = when {
             offResult.isFailure && onResult.isFailure -> "서버 시간표를 불러오지 못했습니다."
@@ -176,7 +179,7 @@ class StudentBusRepository(
         return shuttleRepository.deleteFavorite(schedule.id.toLong()).isSuccess
     }
 
-    private fun TimetableResponse.toSchedule(index: Int, fallback: List<BusSchedule>): BusSchedule {
+    private fun TimetableResponse.toSchedule(index: Int, fallback: List<BusSchedule>, defaultCampusType: String = ""): BusSchedule {
         val stopPoints = (routeList ?: stops).toStopPoints()
         val routeStops = stopPoints.map { it.name }
         val fallbackSchedule = fallback.getOrNull(index % fallback.size)
@@ -199,7 +202,8 @@ class StudentBusRepository(
             remainingSeats = seatLeft.coerceIn(0, FIXED_TOTAL_SEATS),
             totalSeats = FIXED_TOTAL_SEATS,
             currentLocation = firstText(currentLocation, currentStop, fallbackSchedule?.currentLocation, "위치 확인 중입니다"),
-            routeStops = routeStops.ifEmpty { fallbackSchedule?.routeStops.orEmpty() }
+            routeStops = routeStops.ifEmpty { fallbackSchedule?.routeStops.orEmpty() },
+            campusType = resolveCampusType(inOutCampus, routeName, route, fallbackRoute, defaultCampusType)
         )
     }
 
@@ -215,7 +219,11 @@ class StudentBusRepository(
             routeList = routeList
         )
         val fallback = (mockOffCampusSchedules + mockOnCampusSchedules)
-        val schedule = base.toSchedule(index, fallback)
+        val schedule = base.toSchedule(
+            index = index,
+            fallback = fallback,
+            defaultCampusType = resolveCampusType(inOutCampus, routeName, route, base.routeName, base.route)
+        )
         val favoriteDays = days?.map(::toUiDay)?.toSet()
             ?: day?.let { setOf(toUiDay(it)) }
             ?: emptySet()
@@ -227,6 +235,7 @@ class StudentBusRepository(
         liveEta: LiveEtaResponse?,
         busStatus: BusStatusResponse?
     ): RouteDetail {
+        val isRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
         val fallbackStops = schedule.routeStops.ifEmpty { mockRouteDetailFor(schedule).stops }
         val stopPoints = apiStopPoints.ifEmpty { fallbackStops.map { RouteStopPoint(it, null, null) } }
@@ -264,8 +273,12 @@ class StudentBusRepository(
         val eta = liveEta?.etaText
             ?: liveEta?.estimatedMinutes?.let { "${it.toString().padStart(2, '0')}분" }
             ?: liveEta?.etaMinutes?.let { "${it.toString().padStart(2, '0')}분" }
-            ?: "03분"
-        val arrival = firstText(liveEta?.arrivalText, liveEta?.arrivalInfo, "약 3분 후 도착")
+            ?: if (isRunning) "조회 중" else "운행 전"
+        val arrival = if (isRunning) {
+            firstText(liveEta?.arrivalText, liveEta?.arrivalInfo, "도착 정보 조회 중")
+        } else {
+            "현재 운행 중인 버스가 없습니다"
+        }
 
         val infos = stops.associate { stop ->
             val normalized = stop.replace("\n", " ")
@@ -284,7 +297,8 @@ class StudentBusRepository(
             plannedDeparture = schedule.departureTime,
             actualDeparture = firstText(liveEta?.actualDepartureTime, liveEta?.actualDeparture, liveEta?.actualTime, "미정"),
             etaText = eta,
-            stopInfos = infos
+            stopInfos = infos,
+            isRunning = isRunning && liveEta != null
         )
     }
 
@@ -393,6 +407,17 @@ class StudentBusRepository(
             else -> day
         }
     }
+
+    private fun resolveCampusType(vararg values: String?): String {
+        val joined = values.filterNotNull().joinToString(" ").uppercase()
+        return when {
+            joined.contains("IN_CAMPUS") || joined.contains("교내") ||
+                joined.contains("지석묘") || joined.contains("인문경상관") -> "교내"
+            joined.contains("OUT_CAMPUS") || joined.contains("교외") ||
+                joined.contains("판교") || joined.contains("경기광주") || joined.contains("외대(글)") -> "교외"
+            else -> "미분류"
+        }
+    }
 }
 
 private data class RouteStopPoint(
@@ -418,7 +443,8 @@ private fun JsonObject.findDouble(key: String): Double? {
 }
 
 val mockOffCampusSchedules = mockSchedulesFromGroups(
-    startId = 100,
+    100,
+    "교외",
     MockScheduleGroup(
         routeName = "판교역 → 외대(글)",
         stops = listOf("판교역\n(기점)", "성남역", "서현역", "외대(글)\n(종점)"),
@@ -440,7 +466,8 @@ val mockOffCampusSchedules = mockSchedulesFromGroups(
 )
 
 val mockOnCampusSchedules = mockSchedulesFromGroups(
-    startId = 1,
+    1,
+    "교내",
     MockScheduleGroup(
         routeName = "지석묘 → 인문경상관",
         stops = listOf("지석묘\n(기점)", "기숙사", "도서관", "어문관", "인문경상관\n(종점)"),
@@ -476,7 +503,7 @@ private data class MockScheduleGroup(
     val currentLocation: String
 )
 
-private fun mockSchedulesFromGroups(startId: Int, vararg groups: MockScheduleGroup): List<BusSchedule> {
+private fun mockSchedulesFromGroups(startId: Int, campusType: String, vararg groups: MockScheduleGroup): List<BusSchedule> {
     var nextId = startId
     return groups.flatMap { group ->
         group.times.mapIndexed { index, time ->
@@ -487,7 +514,8 @@ private fun mockSchedulesFromGroups(startId: Int, vararg groups: MockScheduleGro
                 remainingSeats = mockRemainingSeats(index),
                 totalSeats = FIXED_TOTAL_SEATS,
                 currentLocation = group.currentLocation,
-                routeStops = group.stops
+                routeStops = group.stops,
+                campusType = campusType
             )
         }
     }
@@ -518,7 +546,7 @@ fun mockRouteDetailFor(schedule: BusSchedule): RouteDetail {
         val normalized = stop.replace("\n", " ")
         normalized to StopArrivalInfo(
             stopName = normalized,
-            arrivalText = "약 3분 후 도착",
+            arrivalText = "현재 운행 중인 버스가 없습니다",
             seatText = "${schedule.remainingSeats.toString().padStart(2, '0')}석"
         )
     }
@@ -527,8 +555,9 @@ fun mockRouteDetailFor(schedule: BusSchedule): RouteDetail {
         currentStopIndex = currentIndex,
         busProgressIndex = currentIndex.toFloat(),
         plannedDeparture = schedule.departureTime,
-        actualDeparture = if (schedule.id == 9) "미정" else "08:32",
-        etaText = "03분",
-        stopInfos = infos
+        actualDeparture = "미정",
+        etaText = "운행 전",
+        stopInfos = infos,
+        isRunning = false
     )
 }

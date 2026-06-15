@@ -117,11 +117,17 @@ class ShuttleRepository(
             apiService.addFavoriteLegacy(
                 FavoriteCreateRequest(
                     timetableId = specificTimetableId,
-                    days = days.ifEmpty { setOf("MON") }
+                    days = days
                 )
             )
         }
-            .recoverCatching { apiService.addFavorite(specificTimetableId) }
+            .recoverCatching {
+                if (days.isEmpty()) {
+                    apiService.deleteFavorite(specificTimetableId)
+                } else {
+                    apiService.addFavorite(specificTimetableId)
+                }
+            }
             .getOrThrow()
         Unit
     }

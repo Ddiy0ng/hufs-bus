@@ -164,6 +164,7 @@ data class FavoriteResponse(
     val specificTimetableId: Long? = null,
     val timetableId: Long? = null,
     val id: Long? = null,
+    val inOutCampus: String? = null,
     val routeName: String? = null,
     val route: String? = null,
     val departureTime: String? = null,
