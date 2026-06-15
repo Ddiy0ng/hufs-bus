@@ -1,121 +1,201 @@
 package com.hufsteam.shuttletrack.ui.driver
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
+import com.hufsteam.shuttletrack.ui.common.BusIcon
+import com.hufsteam.shuttletrack.ui.theme.DividerColor
+import com.hufsteam.shuttletrack.ui.theme.DriverBadge
+import com.hufsteam.shuttletrack.ui.theme.DriverBadgeText
+import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 
-/**
- * 기사 메인 화면 (기본 구조)
- *
- * 추후 추가 기능:
- * - GPS 위치 전송 ON/OFF 토글 (백그라운드 서비스 연동)
- * - NFC 태그 감지 → 탑승/하차 인원 집계
- * - 현재 탑승 인원 표시
- * - 운행 시작/종료 상태 관리
- */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DriverMainScreen(onLogout: () -> Unit) {
-    // 위치 전송 ON/OFF 상태 (추후 실제 서비스와 연결)
-    var isTransmitting by remember { mutableStateOf(false) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title  = { Text("기사 화면", color = Color.White) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary
-                ),
-                actions = {
-                    IconButton(onClick = onLogout) {
-                        Icon(
-                            imageVector        = Icons.Default.ExitToApp,
-                            contentDescription = "로그아웃",
-                            tint               = Color.White
-                        )
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Column(
-            modifier            = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
+fun DriverMainScreen(
+    viewModel: AuthViewModel,
+    driverViewModel: DriverViewModel,
+    onLogout: () -> Unit,
+    onGoTimetable: () -> Unit = {},
+    onGoOperation: (DriverRoute) -> Unit = {}
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .background(Color.White)
+    ) {
+        // ── 프로필 헤더 (연한 회색 배경 밴드) ─────────────────
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color(0xFFF5F5F5))
+                .padding(horizontal = 20.dp, vertical = 20.dp)
         ) {
-            Text("📍", fontSize = 48.sp)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text       = if (isTransmitting) "위치 전송 중" else "위치 전송 대기",
-                fontSize   = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color      = if (isTransmitting) MaterialTheme.colorScheme.primary
-                             else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // 위치 전송 ON/OFF 버튼
-            Button(
-                onClick = { isTransmitting = !isTransmitting },
-                colors  = ButtonDefaults.buttonColors(
-                    containerColor = if (isTransmitting) Color(0xFFE53935) // 빨간색 (중지)
-                                     else MaterialTheme.colorScheme.primary
-                ),
-                modifier = Modifier.size(width = 200.dp, height = 56.dp)
-            ) {
-                Text(
-                    text     = if (isTransmitting) "운행 종료" else "운행 시작",
-                    fontSize = 16.sp
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BusIcon(size = 64.dp)
+                Column(modifier = Modifier.padding(start = 16.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(DriverBadge)
+                            .padding(horizontal = 10.dp, vertical = 3.dp)
+                    ) {
+                        Text("버스기사", color = DriverBadgeText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(viewModel.currentEmail, color = Color(0xFF555555), fontSize = 14.sp)
+                }
             }
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // 탑승 인원 (추후 NFC 연동)
-            Text(
-                text  = "현재 탑승 인원",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text       = "0 명",
-                fontSize   = 36.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text  = "NFC 탑승 집계 기능이 여기에 연동됩니다",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontSize = 13.sp
-            )
         }
+        HorizontalDivider(color = DividerColor)
+
+        // ── 스크롤 콘텐츠 ──────────────────────────────────────
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+        ) {
+            Spacer(Modifier.height(20.dp))
+
+            // 오늘 운행 일정
+            Text("오늘 운행 일정", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+
+            mockDriverRoutes.forEach { route ->
+                DriverRouteCard(
+                    route   = route,
+                    onClick = {
+                        driverViewModel.selectRoute(route)
+                        onGoOperation(route)
+                    }
+                )
+                Spacer(Modifier.height(10.dp))
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = DividerColor)
+            Spacer(Modifier.height(20.dp))
+
+            DriverSectionHeader("서비스 안내")
+            DriverMenuRow("개인정보 처리 방침") {}
+            DriverMenuRow("서비스 이용 약관") {}
+            Spacer(Modifier.height(24.dp))
+
+            DriverSectionHeader("계정 설정")
+            DriverMenuRow("로그아웃", onClick = onLogout)
+            DriverMenuRow("탈퇴하기") {}
+            Spacer(Modifier.height(16.dp))
+        }
+
+        BottomNavBar(
+            selected      = BottomTab.MyPage,
+            onTabSelected = { tab -> if (tab == BottomTab.Timetable) onGoTimetable() }
+        )
+    }
+}
+
+// ── 운행 노선 카드 ─────────────────────────────────────────────
+
+@Composable
+private fun DriverRouteCard(route: DriverRoute, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(10.dp))
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(route.routeName, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF1A1A1A))
+            Spacer(Modifier.height(4.dp))
+            Text("출발 ${route.scheduledTime}", fontSize = 13.sp, color = Color(0xFF777777))
+        }
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50.dp))
+                .background(Color(0xFFEFF3FB))
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            Text("운행 대기", fontSize = 12.sp, color = NavyBlue, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun DriverSectionHeader(title: String) {
+    Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun DriverMenuRow(label: String, onClick: () -> Unit = {}) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp)
+    ) {
+        Text(label, fontSize = 15.sp, color = Color(0xFF333333))
+    }
+}
+
+// ── 하단 탭바 ─────────────────────────────────────────────────
+
+enum class BottomTab { Timetable, Favorites, MyPage }
+
+@Composable
+fun BottomNavBar(
+    selected: BottomTab,
+    onTabSelected: (BottomTab) -> Unit = {}
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(NavyBlue)
+            .padding(vertical = 8.dp)
+    ) {
+        BottomNavItem(Icons.Filled.Schedule, "시간표",   selected == BottomTab.Timetable, { onTabSelected(BottomTab.Timetable) }, Modifier.weight(1f))
+        BottomNavItem(Icons.Filled.Star,     "즐겨찾기", selected == BottomTab.Favorites, { onTabSelected(BottomTab.Favorites) }, Modifier.weight(1f))
+        BottomNavItem(Icons.Filled.Person,   "마이페이지", selected == BottomTab.MyPage,  { onTabSelected(BottomTab.MyPage)    }, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun BottomNavItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val tint = if (selected) Color.White else Color(0x99FFFFFF)
+    Column(
+        modifier            = modifier.clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(24.dp))
+        Text(label, color = tint, fontSize = 11.sp)
     }
 }

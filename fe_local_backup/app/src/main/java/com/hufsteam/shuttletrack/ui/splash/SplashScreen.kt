@@ -2,65 +2,50 @@ package com.hufsteam.shuttletrack.ui.splash
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
+import com.hufsteam.shuttletrack.ui.common.BusIcon
+import kotlinx.coroutines.delay
 
-/**
- * 앱 시작 화면
- * - 이미 로그인된 세션이 있으면 바로 역할별 메인으로 이동
- * - 로그인 세션이 없으면 로그인 화면으로 이동
- */
 @Composable
 fun SplashScreen(
     viewModel: AuthViewModel,
     onNavigate: (loggedIn: Boolean) -> Unit
 ) {
-    // 화면이 표시될 때 한 번만 실행
+    var navigated by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
+        delay(1000)
+
+        // Firebase 응답을 기다림
         viewModel.checkCurrentUser { loggedIn ->
-            onNavigate(loggedIn)
+            if (!navigated) {
+                navigated = true
+                onNavigate(loggedIn)
+            }
+        }
+
+        // 5초 안에 응답 없으면 홈 화면으로 강제 이동
+        delay(5000)
+        if (!navigated) {
+            navigated = true
+            onNavigate(false)
         }
     }
 
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.primary),
+        modifier         = Modifier.fillMaxSize().background(Color.White),
         contentAlignment = Alignment.Center
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text       = "외대 셔틀",
-                color      = Color.White,
-                fontSize   = 32.sp,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text     = "실시간 위치 안내",
-                color    = Color.White.copy(alpha = 0.8f),
-                fontSize = 16.sp
-            )
-            Spacer(modifier = Modifier.height(48.dp))
-            CircularProgressIndicator(
-                color    = Color.White,
-                modifier = Modifier.size(32.dp)
-            )
-        }
+        BusIcon()
     }
 }

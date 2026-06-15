@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.hufsteam.shuttletrack.data.remote.TokenStore
 import com.hufsteam.shuttletrack.ui.navigation.AppNavGraph
 import com.hufsteam.shuttletrack.ui.theme.HufsBusTheme
 
@@ -15,6 +16,7 @@ import com.hufsteam.shuttletrack.ui.theme.HufsBusTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        TokenStore.initialize(this)
         enableEdgeToEdge()
         setContent {
             HufsBusTheme {

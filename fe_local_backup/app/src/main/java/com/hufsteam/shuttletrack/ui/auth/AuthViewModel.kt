@@ -4,136 +4,144 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
-import com.google.firebase.auth.ktx.auth
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
-import com.hufsteam.shuttletrack.data.model.User
+import androidx.lifecycle.viewModelScope
 import com.hufsteam.shuttletrack.data.model.UserRole
+import com.hufsteam.shuttletrack.data.remote.TokenStore
+import com.hufsteam.shuttletrack.data.repository.AuthRepository
+import kotlinx.coroutines.launch
 
-/**
- * 로그인 / 회원가입 / 역할 조회를 담당하는 ViewModel
- *
- * 상태(State):
- *   userRole     - 현재 로그인된 유저의 역할 (null이면 비로그인)
- *   isLoading    - 네트워크 작업 중 여부 (로딩 스피너 표시용)
- *   errorMessage - 오류 메시지 (null이면 오류 없음)
- */
-class AuthViewModel : ViewModel() {
+class AuthViewModel(
+    private val repository: AuthRepository = AuthRepository()
+) : ViewModel() {
 
-    private val auth = Firebase.auth
-    private val db   = Firebase.firestore
+    var userRole        by mutableStateOf<UserRole?>(null);   private set
+    var isLoading       by mutableStateOf(false);              private set
+    var errorMessage    by mutableStateOf<String?>(null);      private set
+    var emailError      by mutableStateOf<String?>(null);      private set
+    var passwordError   by mutableStateOf<String?>(null);      private set
+    var signupSuccess   by mutableStateOf(false);              private set
+    private var loggedInEmail by mutableStateOf<String?>(null)
 
-    var userRole     by mutableStateOf<UserRole?>(null); private set
-    var isLoading    by mutableStateOf(false);            private set
-    var errorMessage by mutableStateOf<String?>(null);    private set
+    val currentEmail: String get() = loggedInEmail.orEmpty()
 
-    // ──────────────────────────────────────────────────
-    // 앱 시작 시: 이미 로그인된 세션이 있는지 확인
-    // ──────────────────────────────────────────────────
     fun checkCurrentUser(onResult: (Boolean) -> Unit) {
-        val currentUser = auth.currentUser
-        if (currentUser == null) {
+        if (TokenStore.accessToken.isNullOrBlank()) {
             onResult(false)
             return
         }
-        fetchUserRole(currentUser.uid) { onResult(true) }
+
+        viewModelScope.launch {
+            repository.getCurrentUser()
+                .onSuccess { session ->
+                    loggedInEmail = session.email
+                    userRole = session.role
+                    onResult(true)
+                }
+                .onFailure {
+                    repository.logout()
+                    loggedInEmail = null
+                    userRole = null
+                    onResult(false)
+                }
+        }
     }
 
-    // ──────────────────────────────────────────────────
-    // 로그인
-    // ──────────────────────────────────────────────────
     fun login(email: String, password: String, onSuccess: () -> Unit) {
+        clearErrors()
         if (email.isBlank() || password.isBlank()) {
             errorMessage = "이메일과 비밀번호를 입력해 주세요."
             return
         }
-        isLoading = true
-        errorMessage = null
 
-        auth.signInWithEmailAndPassword(email.trim(), password)
-            .addOnSuccessListener { result ->
-                fetchUserRole(result.user!!.uid) {
+        val resolvedEmail = if (email.contains("@")) email.trim() else "${email.trim()}@hufs.ac.kr"
+
+        isLoading = true
+        viewModelScope.launch {
+            repository.login(resolvedEmail, password)
+                .onSuccess { session ->
+                    loggedInEmail = session.email
+                    userRole = session.role
                     isLoading = false
                     onSuccess()
                 }
-            }
-            .addOnFailureListener { e ->
-                isLoading = false
-                errorMessage = "로그인 실패: ${e.localizedMessage}"
-            }
+                .onFailure { throwable ->
+                    isLoading = false
+                    errorMessage = throwable.message ?: "이메일 또는 비밀번호가 올바르지 않습니다."
+                }
+        }
     }
 
-    // ──────────────────────────────────────────────────
-    // 회원가입
-    // ──────────────────────────────────────────────────
     fun signUp(
         email: String,
         password: String,
-        name: String,
-        role: UserRole,
+        privacyTermAgree: Boolean,
+        serviceTermAgree: Boolean,
         onSuccess: () -> Unit
     ) {
-        if (email.isBlank() || password.isBlank() || name.isBlank()) {
-            errorMessage = "모든 항목을 입력해 주세요."
-            return
+        clearErrors()
+        var hasError = false
+
+        if (!email.trim().endsWith("@hufs.ac.kr")) {
+            emailError = "hufs.ac.kr 이메일만 가입 가능합니다"
+            hasError = true
         }
+        val hasLetter = password.any { it.isLetter() }
+        val hasDigit  = password.any { it.isDigit() }
+        if (password.length < 8) {
+            passwordError = "비밀번호는 8자 이상이어야 합니다"
+            hasError = true
+        } else if (!hasLetter || !hasDigit) {
+            passwordError = "영문과 숫자를 반드시 포함하여야 합니다"
+            hasError = true
+        }
+        if (!privacyTermAgree || !serviceTermAgree) {
+            errorMessage = "필수 약관에 모두 동의해 주세요."
+            hasError = true
+        }
+        if (hasError) return
+
         isLoading = true
-        errorMessage = null
-
-        auth.createUserWithEmailAndPassword(email.trim(), password)
-            .addOnSuccessListener { result ->
-                val uid  = result.user!!.uid
-                val user = User(uid = uid, email = email.trim(), name = name.trim(), role = role.name)
-
-                db.collection("users").document(uid).set(user)
-                    .addOnSuccessListener {
-                        userRole  = role
-                        isLoading = false
-                        onSuccess()
-                    }
-                    .addOnFailureListener { e ->
-                        isLoading = false
-                        errorMessage = "사용자 정보 저장 실패: ${e.localizedMessage}"
-                    }
-            }
-            .addOnFailureListener { e ->
-                isLoading = false
-                errorMessage = "회원가입 실패: ${e.localizedMessage}"
-            }
-    }
-
-    // ──────────────────────────────────────────────────
-    // 로그아웃
-    // ──────────────────────────────────────────────────
-    fun logout() {
-        auth.signOut()
-        userRole     = null
-        errorMessage = null
-    }
-
-    // ──────────────────────────────────────────────────
-    // 오류 메시지 초기화
-    // ──────────────────────────────────────────────────
-    fun clearError() { errorMessage = null }
-
-    // ──────────────────────────────────────────────────
-    // Firestore에서 역할 조회 (내부 함수)
-    // ──────────────────────────────────────────────────
-    private fun fetchUserRole(uid: String, onDone: () -> Unit) {
-        db.collection("users").document(uid).get()
-            .addOnSuccessListener { doc ->
-                val roleStr = doc.getString("role") ?: UserRole.STUDENT.name
-                userRole = try {
-                    UserRole.valueOf(roleStr)
-                } catch (e: IllegalArgumentException) {
-                    UserRole.STUDENT
+        viewModelScope.launch {
+            repository.signup(
+                email = email.trim(),
+                password = password,
+                privacyTermAgree = privacyTermAgree,
+                serviceTermAgree = serviceTermAgree
+            )
+                .onSuccess { session ->
+                    loggedInEmail = session.email
+                    userRole = session.role
+                    isLoading = false
+                    signupSuccess = true
+                    onSuccess()
                 }
-                onDone()
-            }
-            .addOnFailureListener {
-                // 역할 조회 실패 시 학생으로 기본 처리
-                userRole = UserRole.STUDENT
-                onDone()
-            }
+                .onFailure { throwable ->
+                    isLoading = false
+                    val msg = throwable.message.orEmpty()
+                    when {
+                        msg.contains("already", ignoreCase = true) ->
+                            emailError = "이미 가입된 이메일입니다"
+                        msg.contains("network", ignoreCase = true) ->
+                            errorMessage = "네트워크 오류입니다. 인터넷 연결을 확인해 주세요."
+                        else -> errorMessage = "회원가입 실패: ${msg.ifBlank { "서버 응답을 확인해 주세요." }}"
+                    }
+                }
+        }
+    }
+
+    fun logout() {
+        repository.logout()
+        loggedInEmail = null
+        userRole      = null
+        signupSuccess = false
+        clearErrors()
+    }
+
+    fun dismissSignupSuccess() { signupSuccess = false }
+
+    fun clearErrors() {
+        errorMessage  = null
+        emailError    = null
+        passwordError = null
     }
 }
