@@ -9,6 +9,7 @@ import com.hufsteam.shuttletrack.data.remote.dto.SignupRequest
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
@@ -34,6 +35,9 @@ interface ApiService {
     @GET("/api/buses/{timetableId}/seats")
     suspend fun getBusSeats(@Path("timetableId") timetableId: Long): JsonElement
 
+    @PATCH("/api/timetable/{timetableId}/depart")
+    suspend fun departTimetable(@Path("timetableId") timetableId: Long): JsonElement
+
     @POST("/api/buses/{timetableId}/tags")
     suspend fun postBusTag(
         @Path("timetableId") timetableId: Long,
@@ -57,6 +61,12 @@ interface ApiService {
 
     @POST("/api/favorite")
     suspend fun addFavoriteLegacy(@Body request: FavoriteCreateRequest): JsonElement
+
+    @DELETE("/api/favorite")
+    suspend fun deleteFavoriteLegacy(
+        @Query("favoriteId") favoriteId: Long,
+        @Query("day") day: String
+    ): JsonElement
 
     @DELETE("/api/favorites/{specificTimetableId}")
     suspend fun deleteFavorite(@Path("specificTimetableId") specificTimetableId: Long): JsonElement

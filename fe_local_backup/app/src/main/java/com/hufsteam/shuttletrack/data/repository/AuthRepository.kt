@@ -33,10 +33,11 @@ class AuthRepository(
             ?: payload.findObject("user")?.findString("email")
             ?: email
 
-        TokenStore.save(token)
+        val resolvedRole = role.toUserRole()
+        TokenStore.saveSession(token, responseEmail, resolvedRole.name)
         AuthSession(
             email = responseEmail,
-            role = role.toUserRole(),
+            role = resolvedRole,
             accessToken = token
         )
     }
@@ -65,22 +66,38 @@ class AuthRepository(
             ?: payload.findObject("user")?.findString("email")
             ?: email
 
-        TokenStore.save(token)
+        val resolvedRole = role.toUserRole()
+        TokenStore.saveSession(token, responseEmail, resolvedRole.name)
         AuthSession(
             email = responseEmail,
-            role = role.toUserRole(),
+            role = resolvedRole,
             accessToken = token
         )
     }
 
     suspend fun getCurrentUser(): Result<AuthSession> = runCatching {
-        val response = callOrThrowServerMessage { apiService.getUser() }
-        val payload = response.payloadObject()
-        AuthSession(
-            email = payload.findString("email") ?: "",
-            role = payload.findString("role", "userRole", "authority", "type").toUserRole(),
-            accessToken = TokenStore.accessToken
-        )
+        val serverSession = runCatching {
+            val response = callOrThrowServerMessage { apiService.getUser() }
+            val payload = response.payloadObject()
+            AuthSession(
+                email = payload.findString("email") ?: TokenStore.email.orEmpty(),
+                role = payload.findString("role", "userRole", "authority", "type").toUserRole(),
+                accessToken = TokenStore.accessToken
+            )
+        }
+        serverSession.getOrElse { throwable ->
+            val token = TokenStore.accessToken
+            val savedRole = TokenStore.role
+            if (!token.isNullOrBlank() && !savedRole.isNullOrBlank()) {
+                AuthSession(
+                    email = TokenStore.email.orEmpty(),
+                    role = savedRole.toUserRole(),
+                    accessToken = token
+                )
+            } else {
+                throw throwable
+            }
+        }
     }
 
     fun logout() {

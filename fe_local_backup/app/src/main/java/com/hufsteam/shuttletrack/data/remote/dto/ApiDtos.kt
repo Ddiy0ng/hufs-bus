@@ -111,10 +111,7 @@ data class BusStatusResponse(
 )
 
 data class BusTagRequest(
-    // TODO: 최신 명세에서 필드명이 확정되면 type/tagType 중 하나로 정리한다.
-    val type: String? = null,
-    val tagType: String? = null,
-    val count: Int? = null
+    val type: String
 )
 
 data class FavoriteCreateRequest(
@@ -123,10 +120,19 @@ data class FavoriteCreateRequest(
 )
 
 data class BusTagResponse(
-    // TODO: 예약 태그/탑승 처리 응답 필드가 확정되면 상세 필드를 추가한다.
+    val busId: Long? = null,
+    val totalSeats: Int? = null,
+    val currentSeats: Int? = null,
+    val tagType: String? = null,
     val success: Boolean? = null,
     val message: String? = null,
     val remainingSeats: Int? = null
+)
+
+data class DepartResponse(
+    val timetableId: Long? = null,
+    val actualDepartureTime: String? = null,
+    val busStatus: String? = null
 )
 
 data class DriverLocationRequest(

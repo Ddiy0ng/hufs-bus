@@ -251,8 +251,7 @@ class StudentBusRepository(
             liveEta?.progressIndex
         ) ?: estimateProgressFromCoordinates(stopPoints, busLatitude, busLongitude) ?: currentIndex.toFloat()
 
-        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats)
-            ?: busStatus?.currentSeats?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
+        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats, busStatus?.currentSeats)
             ?: busStatus?.currentPassengers?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
             ?: busStatus?.passengerCount?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
             ?: schedule.remainingSeats

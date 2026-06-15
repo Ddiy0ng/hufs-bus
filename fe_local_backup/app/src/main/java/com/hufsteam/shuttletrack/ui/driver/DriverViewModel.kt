@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.hufsteam.shuttletrack.data.remote.dto.BusTagRequest
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -102,14 +103,29 @@ class DriverViewModel(
     fun startOperation(latitude: Double, longitude: Double) {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val route = selectedRoute
+        val timetableId = route?.timetableId() ?: 1L
         actualDepartureTime = now
         operationState = OperationState.OPERATING
         isGpsTracking = true
         lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
-        operationMessage = "GPS 위치를 서버에 전송 중입니다"
+        operationMessage = "출발 등록 및 GPS 전송 중입니다"
 
-        val busId = route?.busId ?: route?.id?.digitsAsLong() ?: 1L
         viewModelScope.launch {
+            shuttleRepository.departTimetable(timetableId)
+                .onSuccess { depart ->
+                    actualDepartureTime = depart?.actualDepartureTime?.take(5) ?: now
+                    operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
+                }
+                .onFailure { throwable ->
+                    operationMessage = "출발 등록 실패, GPS 전송을 계속 시도합니다: ${throwable.message ?: "서버 응답 확인 필요"}"
+                }
+
+            val busId = shuttleRepository.getBusStatuses(timetableId)
+                .getOrNull()
+                ?.busId
+                ?: route?.busId
+                ?: timetableId
+
             shuttleRepository.postDriverLocation(
                 busId = busId,
                 latitude = latitude,
@@ -136,14 +152,14 @@ class DriverViewModel(
         val total = selectedRoute?.totalSeats ?: 45
         if (operationState == OperationState.OPERATING && passengerCount < total) {
             passengerCount++
-            operationMessage = "탑승 수가 수기로 반영되었습니다"
+            syncPassengerTag(type = "BOARD")
         }
     }
 
     fun decreasePassengers() {
         if (operationState == OperationState.OPERATING && passengerCount > 0) {
             passengerCount--
-            operationMessage = "하차 수가 수기로 반영되었습니다"
+            syncPassengerTag(type = "ALIGHT")
         }
     }
 
@@ -155,6 +171,38 @@ class DriverViewModel(
         operationMessage    = "출발 전입니다"
         lastGpsText         = null
     }
+
+    private fun syncPassengerTag(type: String) {
+        val route = selectedRoute ?: return
+        val timetableId = route.timetableId()
+        operationMessage = if (type == "BOARD") {
+            "탑승 수를 서버에 반영 중입니다"
+        } else {
+            "하차 수를 서버에 반영 중입니다"
+        }
+        viewModelScope.launch {
+            shuttleRepository.postBusTag(timetableId, BusTagRequest(type = type))
+                .onSuccess { response ->
+                    val total = response?.totalSeats ?: route.totalSeats
+                    val currentSeats = response?.currentSeats
+                    if (currentSeats != null) {
+                        passengerCount = (total - currentSeats).coerceIn(0, total)
+                    }
+                    operationMessage = if (type == "BOARD") {
+                        "탑승 수가 서버에 반영되었습니다"
+                    } else {
+                        "하차 수가 서버에 반영되었습니다"
+                    }
+                }
+                .onFailure { throwable ->
+                    operationMessage = "서버 반영 실패, 화면에만 임시 반영되었습니다: ${throwable.message ?: "서버 응답 확인 필요"}"
+                }
+        }
+    }
+}
+
+private fun DriverRoute.timetableId(): Long {
+    return id.digitsAsLong() ?: busId ?: 1L
 }
 
 private fun String.digitsAsLong(): Long? {

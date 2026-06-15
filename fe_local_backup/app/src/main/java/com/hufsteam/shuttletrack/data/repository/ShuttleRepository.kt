@@ -8,6 +8,7 @@ import com.hufsteam.shuttletrack.data.remote.RetrofitClient
 import com.hufsteam.shuttletrack.data.remote.dto.BusStatusResponse
 import com.hufsteam.shuttletrack.data.remote.dto.BusTagRequest
 import com.hufsteam.shuttletrack.data.remote.dto.BusTagResponse
+import com.hufsteam.shuttletrack.data.remote.dto.DepartResponse
 import com.hufsteam.shuttletrack.data.remote.dto.DriverLocationRequest
 import com.hufsteam.shuttletrack.data.remote.dto.DriverLocationResponse
 import com.hufsteam.shuttletrack.data.remote.dto.FavoriteCreateRequest
@@ -37,8 +38,13 @@ class ShuttleRepository(
         response.payloadSingleOrListFirst()?.let { gson.decode<BusStatusResponse>(it) }
     }
 
+    suspend fun departTimetable(timetableId: Long): Result<DepartResponse?> = runCatching {
+        apiService.departTimetable(timetableId)
+            .payloadSingleOrListFirst()
+            ?.let { gson.decode<DepartResponse>(it) }
+    }
+
     suspend fun postBusTag(timetableId: Long, request: BusTagRequest): Result<BusTagResponse?> = runCatching {
-        // TODO: 예약 태그/탑승 처리 request body가 확정되면 호출부에서 실제 필드를 채운다.
         apiService.postBusTag(timetableId, request).payloadSingleOrListFirst()?.let { gson.decode<BusTagResponse>(it) }
     }
 
@@ -80,20 +86,22 @@ class ShuttleRepository(
     }
 
     suspend fun deleteFavorite(specificTimetableId: Long): Result<Unit> = runCatching {
-        apiService.deleteFavorite(specificTimetableId)
+        runCatching { apiService.deleteFavoriteLegacy(specificTimetableId, "MON") }
+            .recoverCatching { apiService.deleteFavorite(specificTimetableId) }
+            .getOrThrow()
         Unit
     }
 
     suspend fun getPrivacy(): Result<TermsResponse?> = runCatching {
-        val response = runCatching { apiService.getPrivacy() }
-            .recoverCatching { apiService.getPrivacyLegacy() }
+        val response = runCatching { apiService.getPrivacyLegacy() }
+            .recoverCatching { apiService.getPrivacy() }
             .getOrThrow()
         response.payloadSingleOrListFirst()?.let { gson.decode<TermsResponse>(it) }
     }
 
     suspend fun getService(): Result<TermsResponse?> = runCatching {
-        val response = runCatching { apiService.getService() }
-            .recoverCatching { apiService.getServiceLegacy() }
+        val response = runCatching { apiService.getServiceLegacy() }
+            .recoverCatching { apiService.getService() }
             .getOrThrow()
         response.payloadSingleOrListFirst()?.let { gson.decode<TermsResponse>(it) }
     }
