@@ -1,5 +1,7 @@
 package hufsbus.spring.domain.timetable.service;
 
+import hufsbus.spring.domain.bus.entity.Bus;
+import hufsbus.spring.domain.bus.repository.BusRepository;
 import hufsbus.spring.domain.timetable.dto.BusRouteResponseDto;
 import hufsbus.spring.domain.timetable.dto.ExcelRequestDto;
 import hufsbus.spring.domain.timetable.dto.TimetableResponseDto;
@@ -39,6 +41,7 @@ public class BusScheduleService {
     private final TimetableRepository timetableRepository;
     private final BusStopRepository busStopRepository;
     private final StopCoordinateRepository stopCoordinateRepository;
+    private final BusRepository busRepository;
     private final FileUpload fileUpload;
 
     /*-----------액셀 업로드 및 저장-----------*/
@@ -72,7 +75,8 @@ public class BusScheduleService {
         try (InputStream inputStream = multipartFile.getInputStream()) {
             List<ExcelRequestDto> excelRequestDtoList = fileUpload.fileToTimetable(inputStream);
 
-            // 기존 시간표 삭제
+            // 기존 데이터 삭제
+            busRepository.deleteAll();
             timetableRepository.deleteAll();
             busStopRepository.deleteAll();
             busRouteRepository.deleteAll();
@@ -150,6 +154,16 @@ public class BusScheduleService {
         Timetable timetable = Timetable.of(departAt, busRoute);
         timetableRepository.save(timetable);
         savedInSession.merge(batchKey, 1L, Long::sum);
+
+        // Timetable에 연결된 Bus 자동 생성
+        Bus bus = Bus.builder()
+                .busNumber("T" + timetable.getId())
+                .totalSeats(Bus.DEFAULT_SEATS)
+                .currentSeats(Bus.DEFAULT_SEATS)
+                .status(Bus.BusStatus.WAITING)
+                .timetable(timetable)
+                .build();
+        busRepository.save(bus);
     }
 
     // 경로 파싱(여러 버스정류장들의 묶음이 하나로 들어오니까,,,)
