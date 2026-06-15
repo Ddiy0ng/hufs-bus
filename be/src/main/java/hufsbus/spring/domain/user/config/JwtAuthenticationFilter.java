@@ -27,21 +27,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String authHeader = request.getHeader("Authorization");
+        String token = null;
 
+        String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            if (jwtUtil.isValid(token)) {
-                Claims claims = jwtUtil.parseToken(token);
-                Long userId = claims.get("userId", Long.class);
-                String role = claims.get("role", String.class);
-                List<GrantedAuthority> authorities = role != null
-                        ? List.of(new SimpleGrantedAuthority(role))
-                        : List.of();
-                SecurityContextHolder.getContext().setAuthentication(
-                        new UsernamePasswordAuthenticationToken(userId, null, authorities)
-                );
+            token = authHeader.substring(7);
+        } else {
+            String queryToken = request.getParameter("token");
+            if (queryToken != null && !queryToken.isBlank()) {
+                token = queryToken;
             }
+        }
+
+        if (token != null && jwtUtil.isValid(token)) {
+            Claims claims = jwtUtil.parseToken(token);
+            Long userId = claims.get("userId", Long.class);
+            String role = claims.get("role", String.class);
+            List<GrantedAuthority> authorities = role != null
+                    ? List.of(new SimpleGrantedAuthority(role))
+                    : List.of();
+            SecurityContextHolder.getContext().setAuthentication(
+                    new UsernamePasswordAuthenticationToken(userId, null, authorities)
+            );
         }
 
         filterChain.doFilter(request, response);
