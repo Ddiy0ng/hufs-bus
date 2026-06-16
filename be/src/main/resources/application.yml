@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: be
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT}/hufs_bus?serverTimezone=Asia/Seoul&characterEncoding=UTF-8&useSSL=false&allowPublicKeyRetrieval=true&connectTimeout=10000&socketTimeout=60000
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        show_sql: false
+        format_sql: false
+
+logging:
+  level:
+    root: INFO
+    hufsbus.spring: INFO
+    com.zaxxer.hikari: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+
+jwt:
+  token:
+    secretKey: ${JWT_SECRETKEY}
+
+kakao:
+  api:
+    key: ${KAKAO_API_KEY}
+
+file:
+  upload-dir: /home/ubuntu/uploads/pdfs
