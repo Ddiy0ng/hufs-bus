@@ -133,18 +133,36 @@ class ShuttleRepository(
 
         resolvedFavorites.distinctBy {
             listOfNotNull(
-                it.favoriteId,
                 it.timetableId ?: it.specificTimetableId ?: it.id,
                 it.day ?: it.dayOfWeek,
-                it.inOutCampus
+                it.inOutCampus,
+                it.departAt ?: it.departureTime ?: it.time,
+                it.route ?: it.routeName
             ).joinToString(":")
         }
     }
 
-    suspend fun addFavorite(specificTimetableId: Long, days: Set<String> = emptySet()): Result<Unit> = runCatching {
-        apiService.updateFavorite(
+    suspend fun saveFavorite(timetableId: Long, days: Set<String>, isExisting: Boolean): Result<Unit> = runCatching {
+        val request = FavoriteCreateRequest(
+            timetableId = timetableId,
+            days = days
+        )
+        if (isExisting) {
+            runCatching { apiService.updateFavorite(request) }
+                .recoverCatching { apiService.addFavoriteLegacy(request) }
+                .getOrThrow()
+        } else {
+            runCatching { apiService.addFavoriteLegacy(request) }
+                .recoverCatching { apiService.updateFavorite(request) }
+                .getOrThrow()
+        }
+        Unit
+    }
+
+    suspend fun addFavorite(timetableId: Long, days: Set<String> = emptySet()): Result<Unit> = runCatching {
+        apiService.addFavoriteLegacy(
             FavoriteCreateRequest(
-                timetableId = specificTimetableId,
+                timetableId = timetableId,
                 days = days
             )
         )

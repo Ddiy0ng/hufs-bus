@@ -118,7 +118,9 @@ data class BusStatusResponse(
     val passengerCount: Int? = null,
     val totalSeats: Int? = null,
     val status: String? = null,
-    val busId: Long? = null
+    val busId: Long? = null,
+    val currentStopSequence: Int? = null,
+    val currentStopName: String? = null
 )
 
 data class BusTagRequest(
@@ -156,7 +158,11 @@ data class DriverLocationResponse(
     val busId: Long? = null,
     val latitude: Double? = null,
     val longitude: Double? = null,
-    val recordedAt: String? = null
+    val recordedAt: String? = null,
+    val currentSeats: Int? = null,
+    val status: String? = null,
+    val currentStopSequence: Int? = null,
+    val currentStopName: String? = null
 )
 
 data class FavoriteResponse(

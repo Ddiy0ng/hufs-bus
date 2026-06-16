@@ -177,6 +177,11 @@ fun StudentMainScreen(
             StudentBottomBar(
                 selected = selectedTab,
                 onTabClick = { tab ->
+                    when (tab) {
+                        StudentTab.TIMETABLE -> studentBusViewModel.refreshSchedules()
+                        StudentTab.FAVORITES -> studentBusViewModel.refreshFavorites()
+                        StudentTab.MYPAGE -> Unit
+                    }
                     selectedTab = tab
                     currentScreen = when (tab) {
                         StudentTab.TIMETABLE -> StudentScreen.TIMETABLE
@@ -239,7 +244,8 @@ fun StudentMainScreen(
                     onGoAdminStopManagement = onGoAdminStopManagement,
                     onGoAdminTimetableManagement = onGoAdminTimetableManagement,
                     driverViewModel = driverViewModel,
-                    schedules = liveOffCampusSchedules + liveOnCampusSchedules
+                    schedules = liveOffCampusSchedules + liveOnCampusSchedules,
+                    onRefreshSchedules = { studentBusViewModel.refreshSchedules() }
                 )
             }
 
@@ -1051,7 +1057,7 @@ private fun StudentFavoritesContent(
                 ) {
                     items(visibleFavorites) { favorite ->
                         Card(
-                            modifier = Modifier.fillMaxWidth().clickable { onScheduleClick(favorite) },
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -1060,7 +1066,12 @@ private fun StudentFavoritesContent(
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onScheduleClick(favorite) }
+                                ) {
                                     Text(
                                         favorite.schedule.routeName,
                                         fontSize = 13.sp,
@@ -1223,7 +1234,8 @@ private fun StudentMyPageContent(
     onGoAdminStopManagement: () -> Unit,
     onGoAdminTimetableManagement: () -> Unit,
     driverViewModel: DriverViewModel,
-    schedules: List<BusSchedule>
+    schedules: List<BusSchedule>,
+    onRefreshSchedules: () -> Unit
 ) {
     val role = viewModel.userRole ?: UserRole.STUDENT
     val roleLabel = when (role) {
@@ -1351,6 +1363,7 @@ private fun StudentMyPageContent(
                                         )
                                         adminUploaded = success
                                         noticeMessage = if (success) {
+                                            onRefreshSchedules()
                                             "버스 시간표가 업로드되었습니다"
                                         } else {
                                             "시간표 업로드에 실패했습니다. 서버 상태를 확인해 주세요"

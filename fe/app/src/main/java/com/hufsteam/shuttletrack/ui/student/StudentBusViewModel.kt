@@ -85,16 +85,21 @@ class StudentBusViewModel(
 
     fun saveFavorite(schedule: BusSchedule, days: Set<String>) {
         viewModelScope.launch {
-            val saved = repository.saveFavorite(schedule, days)
+            val hadFavorite = uiState.favoriteSchedules.any { it.schedule.id == schedule.id }
+            val saved = repository.saveFavorite(schedule, days, hadFavorite)
             if (saved) {
                 val refreshedFavorites = repository.loadFavorites()
-                uiState = uiState.copy(
-                    favoriteSchedules = if (refreshedFavorites.isNotEmpty() || days.isEmpty()) {
-                        refreshedFavorites
-                    } else {
-                        uiState.favoriteSchedules
-                            .filterNot { it.schedule.id == schedule.id } + FavoriteSchedule(schedule, days)
+                val nextFavorites = refreshedFavorites
+                    .filterNot { it.schedule.id == schedule.id }
+                    .let { favorites ->
+                        if (days.isEmpty()) {
+                            favorites
+                        } else {
+                            favorites + FavoriteSchedule(schedule, days)
+                        }
                     }
+                uiState = uiState.copy(
+                    favoriteSchedules = nextFavorites
                 )
             } else {
                 uiState = uiState.copy(errorMessage = "즐겨찾기 설정에 실패했습니다.")
@@ -175,10 +180,11 @@ class StudentBusRepository(
         return routeDetailFromApi(schedule, liveEta, busStatus)
     }
 
-    suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>): Boolean {
-        return shuttleRepository.addFavorite(
-            specificTimetableId = schedule.id.toLong(),
-            days = days.map(::toApiDay).toSet()
+    suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>, isExisting: Boolean): Boolean {
+        return shuttleRepository.saveFavorite(
+            timetableId = schedule.id.toLong(),
+            days = days.map(::toApiDay).toSet(),
+            isExisting = isExisting
         ).isSuccess
     }
 
@@ -203,7 +209,7 @@ class StudentBusRepository(
             ?: FIXED_TOTAL_SEATS
 
         return BusSchedule(
-            id = firstLong(specificTimetableId, timetableId, id)?.toInt() ?: fallbackSchedule?.id ?: index + 1,
+            id = firstLong(timetableId, specificTimetableId, id)?.toInt() ?: fallbackSchedule?.id ?: index + 1,
             routeName = firstText(routeName, route, fallbackRoute),
             departureTime = firstText(departureTime, departAt, time, plannedDeparture, fallbackSchedule?.departureTime, "00:00"),
             remainingSeats = seatLeft.coerceIn(0, FIXED_TOTAL_SEATS),
@@ -251,14 +257,25 @@ class StudentBusRepository(
         liveEta: LiveEtaResponse?,
         busStatus: BusStatusResponse?
     ): RouteDetail {
-        val hasLiveBus = busStatus?.status?.trim()?.uppercase() == "RUNNING" && liveEta != null
+        val statusIsRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
+        val hasTrackedStop = busStatus?.currentStopSequence != null || !busStatus?.currentStopName.isNullOrBlank()
+        val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop)
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
         val fallbackStops = schedule.routeStops.ifEmpty { mockRouteDetailFor(schedule).stops }
         val stopPoints = apiStopPoints.ifEmpty { fallbackStops.map { RouteStopPoint(it, null, null) } }
         val stops = stopPoints.map { it.name }
+        val currentStopNameIndex = busStatus?.currentStopName?.let { currentStop ->
+            stops.indexOfFirst { it.cleanStopName() == currentStop.cleanStopName() }
+        }?.takeIf { it >= 0 }
 
         val currentIndex = if (hasLiveBus) {
-            firstInt(liveEta?.currentStopIndex, liveEta?.busStopIndex, liveEta?.currentIndex) ?: 0
+            firstInt(
+                liveEta?.currentStopIndex,
+                liveEta?.busStopIndex,
+                liveEta?.currentIndex,
+                busStatus?.currentStopSequence?.minus(1),
+                currentStopNameIndex
+            ) ?: 0
         } else {
             0
         }
