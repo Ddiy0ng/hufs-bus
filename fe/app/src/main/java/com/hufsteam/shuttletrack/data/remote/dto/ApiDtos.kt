@@ -127,7 +127,6 @@ data class BusTagRequest(
 
 data class FavoriteCreateRequest(
     val timetableId: Long,
-    val specificTimetableId: Long = timetableId,
     val days: Set<String>
 )
 

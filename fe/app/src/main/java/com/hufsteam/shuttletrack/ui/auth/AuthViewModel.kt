@@ -137,6 +137,25 @@ class AuthViewModel(
         clearErrors()
     }
 
+    fun withdraw(onSuccess: () -> Unit) {
+        clearErrors()
+        isLoading = true
+        viewModelScope.launch {
+            repository.withdraw()
+                .onSuccess {
+                    loggedInEmail = null
+                    userRole = null
+                    signupSuccess = false
+                    isLoading = false
+                    onSuccess()
+                }
+                .onFailure { throwable ->
+                    isLoading = false
+                    errorMessage = throwable.message ?: "회원 탈퇴에 실패했습니다."
+                }
+        }
+    }
+
     fun dismissSignupSuccess() { signupSuccess = false }
 
     fun clearErrors() {

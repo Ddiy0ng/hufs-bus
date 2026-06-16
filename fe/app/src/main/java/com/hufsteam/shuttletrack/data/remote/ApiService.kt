@@ -11,6 +11,7 @@ import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -65,6 +66,9 @@ interface ApiService {
     @POST("/api/favorite")
     suspend fun addFavoriteLegacy(@Body request: FavoriteCreateRequest): JsonElement
 
+    @PUT("/api/favorite")
+    suspend fun updateFavorite(@Body request: FavoriteCreateRequest): JsonElement
+
     @DELETE("/api/favorite")
     suspend fun deleteFavoriteLegacy(
         @Query("favoriteId") favoriteId: Long,
@@ -73,6 +77,9 @@ interface ApiService {
 
     @DELETE("/api/favorites/{specificTimetableId}")
     suspend fun deleteFavorite(@Path("specificTimetableId") specificTimetableId: Long): JsonElement
+
+    @DELETE("/api/users/me")
+    suspend fun withdrawUser(): JsonElement
 
     @GET("/api/user")
     suspend fun getUser(): JsonElement

@@ -2,7 +2,6 @@ package com.hufsteam.shuttletrack.data.repository
 
 import com.google.gson.Gson
 import com.google.gson.JsonElement
-import com.google.gson.JsonObject
 import com.hufsteam.shuttletrack.data.remote.ApiService
 import com.hufsteam.shuttletrack.data.remote.RetrofitClient
 import com.hufsteam.shuttletrack.data.remote.TokenStore
@@ -28,6 +27,9 @@ class ShuttleRepository(
     private val apiService: ApiService = RetrofitClient.apiService,
     private val gson: Gson = RetrofitClient.gson
 ) {
+    private val favoriteCampuses = listOf("IN_CAMPUS", "OUT_CAMPUS")
+    private val favoriteDays = listOf("MON", "TUE", "WED", "THU", "FRI")
+
     suspend fun getTimetable(inOutCampus: String? = null): Result<List<TimetableResponse>> = runCatching {
         apiService.getTimetable(inOutCampus)
             .payloadList()
@@ -104,16 +106,43 @@ class ShuttleRepository(
     }
 
     suspend fun getFavorites(): Result<List<FavoriteResponse>> = runCatching {
-        val response = runCatching { apiService.getFavorite() }
-            .recoverCatching { apiService.getFavorites() }
-            .getOrThrow()
-        response
-            .payloadList()
-            .mapNotNull { gson.decode<FavoriteResponse>(it) }
+        val favorites = mutableListOf<FavoriteResponse>()
+        var requestCount = 0
+        var failureCount = 0
+
+        favoriteCampuses.forEach { campus ->
+            favoriteDays.forEach { day ->
+                requestCount += 1
+                runCatching { apiService.getFavorite(inOutCampus = campus, day = day) }
+                    .onSuccess { response ->
+                        response.payloadList()
+                            .map { it.withFavoriteMetadata(campus, day) }
+                            .mapNotNullTo(favorites) { gson.decode<FavoriteResponse>(it) }
+                    }
+                    .onFailure { failureCount += 1 }
+            }
+        }
+
+        val resolvedFavorites = if (favorites.isEmpty() && requestCount == failureCount) {
+            apiService.getFavorites()
+                .payloadList()
+                .mapNotNull { gson.decode<FavoriteResponse>(it) }
+        } else {
+            favorites
+        }
+
+        resolvedFavorites.distinctBy {
+            listOfNotNull(
+                it.favoriteId,
+                it.timetableId ?: it.specificTimetableId ?: it.id,
+                it.day ?: it.dayOfWeek,
+                it.inOutCampus
+            ).joinToString(":")
+        }
     }
 
     suspend fun addFavorite(specificTimetableId: Long, days: Set<String> = emptySet()): Result<Unit> = runCatching {
-        apiService.addFavoriteLegacy(
+        apiService.updateFavorite(
             FavoriteCreateRequest(
                 timetableId = specificTimetableId,
                 days = days
@@ -146,6 +175,18 @@ class ShuttleRepository(
 
 private inline fun <reified T> Gson.decode(element: JsonElement): T? {
     return runCatching { fromJson(element, T::class.java) }.getOrNull()
+}
+
+private fun JsonElement.withFavoriteMetadata(campus: String, day: String): JsonElement {
+    if (!isJsonObject) return this
+    val obj = deepCopy().asJsonObject
+    if (!obj.has("inOutCampus") || obj.get("inOutCampus").isJsonNull) {
+        obj.addProperty("inOutCampus", campus)
+    }
+    if (!obj.has("day") || obj.get("day").isJsonNull) {
+        obj.addProperty("day", day)
+    }
+    return obj
 }
 
 private fun JsonElement.payloadSingleOrListFirst(): JsonElement? {

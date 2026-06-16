@@ -1251,6 +1251,12 @@ private fun StudentMyPageContent(
     var serviceTermsPdfFile by remember { mutableStateOf<AdminUploadFile?>(null) }
     var serviceTermsPdfUploaded by remember { mutableStateOf(false) }
     var noticeMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(viewModel.errorMessage) {
+        viewModel.errorMessage?.let { message ->
+            noticeMessage = message
+            viewModel.clearErrors()
+        }
+    }
     val timetableFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         persistReadPermission(context, uri)
@@ -1459,7 +1465,8 @@ private fun StudentMyPageContent(
                 MyPageSectionHeader("계정 설정")
                 MyPageRow("로그아웃", onClick = onLogout)
                 MyPageRow("탈퇴하기") {
-                    noticeMessage = "회원 탈퇴는 계정 삭제 API 연동 후 활성화됩니다"
+                    noticeMessage = "회원 탈퇴를 처리 중입니다"
+                    viewModel.withdraw(onSuccess = onLogout)
                 }
                 Spacer(Modifier.height(24.dp))
             }
