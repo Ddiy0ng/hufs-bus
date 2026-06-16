@@ -113,19 +113,12 @@ class ShuttleRepository(
     }
 
     suspend fun addFavorite(specificTimetableId: Long, days: Set<String> = emptySet()): Result<Unit> = runCatching {
-        runCatching {
-            apiService.addFavoriteLegacy(
-                FavoriteCreateRequest(
-                    timetableId = specificTimetableId,
-                    days = days
-                )
+        apiService.addFavoriteLegacy(
+            FavoriteCreateRequest(
+                timetableId = specificTimetableId,
+                days = days
             )
-        }
-            .recoverCatching {
-                if (days.isEmpty()) throw it
-                apiService.addFavorite(specificTimetableId)
-            }
-            .getOrThrow()
+        )
         Unit
     }
 

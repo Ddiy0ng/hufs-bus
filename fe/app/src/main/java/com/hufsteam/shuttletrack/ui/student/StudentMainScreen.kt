@@ -222,6 +222,9 @@ fun StudentMainScreen(
                         selectedSchedule = it.schedule
                         studentBusViewModel.loadRouteStatus(it.schedule)
                         currentScreen = StudentScreen.ROUTE_STATUS
+                    },
+                    onFavoriteEditClick = { favorite ->
+                        favoriteTarget = favorite.schedule
                     }
                 )
 
@@ -958,7 +961,8 @@ private fun CurvedRouteProgressBar(stops: List<String>, currentStopIndex: Int) {
 @Composable
 private fun StudentFavoritesContent(
     favorites: List<FavoriteSchedule>,
-    onScheduleClick: (FavoriteSchedule) -> Unit
+    onScheduleClick: (FavoriteSchedule) -> Unit,
+    onFavoriteEditClick: (FavoriteSchedule) -> Unit
 ) {
     var selectedCampus by remember { mutableStateOf("교내") }
     var selectedDay by remember { mutableStateOf(notificationDays.first()) }
@@ -1086,12 +1090,20 @@ private fun StudentFavoritesContent(
                                         color = Color(0xFF8A8F98)
                                     )
                                 }
-                                Icon(
-                                    Icons.Filled.Star,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFC400),
-                                    modifier = Modifier.size(34.dp)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .clickable { onFavoriteEditClick(favorite) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Star,
+                                        contentDescription = "즐겨찾기 요일 수정",
+                                        tint = Color(0xFFFFC400),
+                                        modifier = Modifier.size(34.dp)
+                                    )
+                                }
                             }
                         }
                     }

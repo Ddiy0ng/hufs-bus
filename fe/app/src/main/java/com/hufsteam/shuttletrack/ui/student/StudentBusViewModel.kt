@@ -150,9 +150,16 @@ class StudentBusRepository(
     }
 
     suspend fun loadFavorites(): List<FavoriteSchedule> {
-        return shuttleRepository.getFavorites().getOrNull()
+        val favorites = shuttleRepository.getFavorites().getOrNull()
             ?.mapIndexedNotNull { index, favorite -> favorite.toFavoriteSchedule(index) }
             .orEmpty()
+
+        return favorites
+            .groupBy { it.schedule.id }
+            .map { (_, items) ->
+                val first = items.first()
+                first.copy(days = items.flatMap { it.days }.toSet())
+            }
     }
 
     suspend fun loadRouteDetail(schedule: BusSchedule): RouteDetail {
@@ -224,10 +231,19 @@ class StudentBusRepository(
             fallback = fallback,
             defaultCampusType = resolveCampusType(inOutCampus, routeName, route, base.routeName, base.route)
         )
-        val favoriteDays = days?.map(::toUiDay)?.toSet()
-            ?: day?.let { setOf(toUiDay(it)) }
-            ?: emptySet()
-        return FavoriteSchedule(schedule, favoriteDays)
+        val parsedDays = listOfNotNull(
+            days,
+            dayOfWeeks,
+            weekdays,
+            weekDays,
+            notificationDays,
+            reminderDays,
+            favoriteDays
+        )
+            .flatten()
+            .map(::toUiDay)
+            .toSet() + listOfNotNull(day, dayOfWeek).map(::toUiDay).toSet()
+        return FavoriteSchedule(schedule, parsedDays)
     }
 
     private fun routeDetailFromApi(
@@ -402,24 +418,25 @@ class StudentBusRepository(
     }
 
     private fun toUiDay(day: String): String {
-        return when (day.uppercase()) {
-            "MON", "MONDAY" -> "월요일"
-            "TUE", "TUESDAY" -> "화요일"
-            "WED", "WEDNESDAY" -> "수요일"
-            "THU", "THURSDAY" -> "목요일"
-            "FRI", "FRIDAY" -> "금요일"
-            else -> day
+        val normalized = day.trim().uppercase()
+        return when (normalized) {
+            "MON", "MONDAY", "월", "월요일" -> "월요일"
+            "TUE", "TUESDAY", "화", "화요일" -> "화요일"
+            "WED", "WEDNESDAY", "수", "수요일" -> "수요일"
+            "THU", "THURSDAY", "목", "목요일" -> "목요일"
+            "FRI", "FRIDAY", "금", "금요일" -> "금요일"
+            else -> day.trim()
         }
     }
 
     private fun toApiDay(day: String): String {
-        return when (day) {
-            "월요일", "MON" -> "MON"
-            "화요일", "TUE" -> "TUE"
-            "수요일", "WED" -> "WED"
-            "목요일", "THU" -> "THU"
-            "금요일", "FRI" -> "FRI"
-            else -> day
+        return when (day.trim().uppercase()) {
+            "월", "월요일", "MON", "MONDAY" -> "MON"
+            "화", "화요일", "TUE", "TUESDAY" -> "TUE"
+            "수", "수요일", "WED", "WEDNESDAY" -> "WED"
+            "목", "목요일", "THU", "THURSDAY" -> "THU"
+            "금", "금요일", "FRI", "FRIDAY" -> "FRI"
+            else -> day.trim()
         }
     }
 
