@@ -205,15 +205,6 @@ private fun JsonElement.toTimetableResponses(): List<TimetableResponse> {
     val gson = RetrofitClient.gson
     return payloadList()
         .mapNotNull { gson.decode<TimetableResponse>(it) }
-        .distinctBy {
-            listOfNotNull(
-                it.timetableId ?: it.specificTimetableId ?: it.id,
-                it.inOutCampus,
-                it.departAt ?: it.departureTime ?: it.time,
-                it.startStop,
-                it.endStop
-            ).joinToString(":")
-        }
 }
 
 private fun TimetableResponse.matchesCampus(inOutCampus: String): Boolean {
