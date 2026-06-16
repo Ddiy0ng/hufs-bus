@@ -36,7 +36,7 @@ public class SseEmitterService {
         for (SseEmitter emitter : list) {
             try {
                 emitter.send(SseEmitter.event().name(eventName).data(data));
-            } catch (IOException e) {
+            } catch (IOException | IllegalStateException e) {
                 dead.add(emitter);
             }
         }
