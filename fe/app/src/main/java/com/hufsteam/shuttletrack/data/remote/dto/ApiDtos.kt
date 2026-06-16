@@ -127,6 +127,7 @@ data class BusTagRequest(
 
 data class FavoriteCreateRequest(
     val timetableId: Long,
+    val specificTimetableId: Long = timetableId,
     val days: Set<String>
 )
 
@@ -171,7 +172,14 @@ data class FavoriteResponse(
     val departAt: String? = null,
     val time: String? = null,
     val day: String? = null,
+    val dayOfWeek: String? = null,
     val days: List<String>? = null,
+    val dayOfWeeks: List<String>? = null,
+    val weekdays: List<String>? = null,
+    val weekDays: List<String>? = null,
+    val notificationDays: List<String>? = null,
+    val reminderDays: List<String>? = null,
+    val favoriteDays: List<String>? = null,
     val timetable: TimetableResponse? = null,
     val routeList: List<JsonElement>? = null
 )
