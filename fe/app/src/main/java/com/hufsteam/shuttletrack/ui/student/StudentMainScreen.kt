@@ -13,10 +13,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -199,6 +202,7 @@ fun StudentMainScreen(
                     onCampusSchedules = liveOnCampusSchedules,
                     isLoading = studentUiState.isLoading,
                     errorMessage = studentUiState.errorMessage,
+                    onRefresh = { studentBusViewModel.refreshSchedules() },
                     onScheduleClick = {
                         if (viewModel.userRole == UserRole.DRIVER) {
                             onGoDriverOperation(it.toDriverRoute())
@@ -214,6 +218,10 @@ fun StudentMainScreen(
                     schedule = liveSelectedSchedule,
                     routeDetail = liveRouteDetail,
                     isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
+                    onRefresh = {
+                        studentBusViewModel.refreshSchedules()
+                        studentBusViewModel.loadRouteStatus(selectedSchedule)
+                    },
                     onBackClick = {
                         currentScreen = StudentScreen.TIMETABLE
                         selectedTab = StudentTab.TIMETABLE
@@ -223,6 +231,7 @@ fun StudentMainScreen(
 
                 StudentScreen.FAVORITES -> StudentFavoritesContent(
                     favorites = favoriteSchedules,
+                    onRefresh = { studentBusViewModel.refreshFavorites() },
                     onScheduleClick = {
                         selectedSchedule = it.schedule
                         studentBusViewModel.loadRouteStatus(it.schedule)
@@ -311,6 +320,83 @@ private fun RouteDetail.withSeatText(schedule: BusSchedule): RouteDetail {
     )
 }
 
+@Composable
+private fun PullToRefreshContainer(
+    modifier: Modifier = Modifier,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit,
+    content: @Composable BoxScope.() -> Unit
+) {
+    var pullDistance by remember { mutableStateOf(0f) }
+    var gestureRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val refreshing = isRefreshing || gestureRefreshing
+
+    Box(
+        modifier = modifier.pointerInput(refreshing) {
+            detectVerticalDragGestures(
+                onVerticalDrag = { change, dragAmount ->
+                    if (dragAmount > 0f) {
+                        pullDistance = (pullDistance + dragAmount).coerceAtMost(240f)
+                        change.consume()
+                    }
+                },
+                onDragCancel = {
+                    pullDistance = 0f
+                },
+                onDragEnd = {
+                    if (pullDistance >= 120f && !refreshing) {
+                        gestureRefreshing = true
+                        onRefresh()
+                        scope.launch {
+                            delay(900)
+                            gestureRefreshing = false
+                        }
+                    }
+                    pullDistance = 0f
+                }
+            )
+        }
+    ) {
+        content()
+        AnimatedVisibility(
+            visible = refreshing || pullDistance > 36f,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = ((pullDistance / 7f).coerceIn(0f, 30f)).dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(50.dp),
+                color = Color.White,
+                shadowElevation = 4.dp,
+                border = BorderStroke(1.dp, Color(0xFFE0E4EA))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (refreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = NavyBlue,
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    Text(
+                        if (refreshing) "새로고침 중" else "놓으면 새로고침",
+                        fontSize = 12.sp,
+                        color = NavyBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ── 시간표 화면 ─────────────────────────────────────────────────
 @Composable
 private fun StudentTimetableContent(
@@ -318,6 +404,7 @@ private fun StudentTimetableContent(
     onCampusSchedules: List<BusSchedule>,
     isLoading: Boolean,
     errorMessage: String?,
+    onRefresh: () -> Unit,
     onScheduleClick: (BusSchedule) -> Unit
 ) {
     var selectedCampus by remember { mutableStateOf(0) }
@@ -331,6 +418,11 @@ private fun StudentTimetableContent(
         if (selectedRoute !in routes) selectedRoute = routes.firstOrNull().orEmpty()
     }
 
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        isRefreshing = isLoading,
+        onRefresh = onRefresh
+    ) {
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
         TabRow(
             selectedTabIndex = selectedCampus,
@@ -458,6 +550,7 @@ private fun StudentTimetableContent(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -503,6 +596,7 @@ private fun StudentRouteStatusContent(
     schedule: BusSchedule,
     routeDetail: RouteDetail,
     isFavorite: Boolean,
+    onRefresh: () -> Unit,
     onBackClick: () -> Unit,
     onFavoriteClick: () -> Unit
 ) {
@@ -513,6 +607,10 @@ private fun StudentRouteStatusContent(
         mutableStateOf<Int?>(null)
     }
 
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        onRefresh = onRefresh
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -634,6 +732,7 @@ private fun StudentRouteStatusContent(
                 }
             }
         }
+    }
     }
 }
 @Composable
@@ -967,6 +1066,7 @@ private fun CurvedRouteProgressBar(stops: List<String>, currentStopIndex: Int) {
 @Composable
 private fun StudentFavoritesContent(
     favorites: List<FavoriteSchedule>,
+    onRefresh: () -> Unit,
     onScheduleClick: (FavoriteSchedule) -> Unit,
     onFavoriteEditClick: (FavoriteSchedule) -> Unit
 ) {
@@ -978,6 +1078,10 @@ private fun StudentFavoritesContent(
         favorite.schedule.campusType == selectedCampus && selectedDay in favorite.days
     }
 
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        onRefresh = onRefresh
+    ) {
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Box(
             modifier = Modifier
@@ -1121,6 +1225,7 @@ private fun StudentFavoritesContent(
                 }
             }
         }
+    }
     }
 }
 
