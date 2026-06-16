@@ -201,7 +201,7 @@ class StudentBusRepository(
             departureTime = firstText(departureTime, departAt, time, plannedDeparture, fallbackSchedule?.departureTime, "00:00"),
             remainingSeats = seatLeft.coerceIn(0, FIXED_TOTAL_SEATS),
             totalSeats = FIXED_TOTAL_SEATS,
-            currentLocation = firstText(currentLocation, currentStop, fallbackSchedule?.currentLocation, "위치 확인 중입니다"),
+            currentLocation = firstText(currentLocation, currentStop, "운행 전"),
             routeStops = routeStops.ifEmpty { fallbackSchedule?.routeStops.orEmpty() },
             campusType = resolveCampusType(inOutCampus, routeName, route, fallbackRoute, defaultCampusType)
         )
@@ -235,14 +235,17 @@ class StudentBusRepository(
         liveEta: LiveEtaResponse?,
         busStatus: BusStatusResponse?
     ): RouteDetail {
-        val isRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
+        val hasLiveBus = busStatus?.status?.trim()?.uppercase() == "RUNNING" && liveEta != null
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
         val fallbackStops = schedule.routeStops.ifEmpty { mockRouteDetailFor(schedule).stops }
         val stopPoints = apiStopPoints.ifEmpty { fallbackStops.map { RouteStopPoint(it, null, null) } }
         val stops = stopPoints.map { it.name }
 
-        val currentIndex = firstInt(liveEta?.currentStopIndex, liveEta?.busStopIndex, liveEta?.currentIndex)
-            ?: (stops.lastIndex - 1).coerceAtLeast(0)
+        val currentIndex = if (hasLiveBus) {
+            firstInt(liveEta?.currentStopIndex, liveEta?.busStopIndex, liveEta?.currentIndex) ?: 0
+        } else {
+            0
+        }
         val busLatitude = firstDouble(
             liveEta?.busLatitude,
             liveEta?.busLat,
@@ -264,17 +267,25 @@ class StudentBusRepository(
             liveEta?.currentProgressIndex,
             liveEta?.routeProgressIndex,
             liveEta?.progressIndex
-        ) ?: estimateProgressFromCoordinates(stopPoints, busLatitude, busLongitude) ?: currentIndex.toFloat()
+        ) ?: if (hasLiveBus) {
+            estimateProgressFromCoordinates(stopPoints, busLatitude, busLongitude) ?: currentIndex.toFloat()
+        } else {
+            0f
+        }
 
         val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats, busStatus?.currentSeats, liveEta?.currentSeats)
             ?: busStatus?.currentPassengers?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
             ?: busStatus?.passengerCount?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
             ?: schedule.remainingSeats
-        val eta = liveEta?.etaText
-            ?: liveEta?.estimatedMinutes?.let { "${it.toString().padStart(2, '0')}분" }
-            ?: liveEta?.etaMinutes?.let { "${it.toString().padStart(2, '0')}분" }
-            ?: if (isRunning) "조회 중" else "운행 전"
-        val arrival = if (isRunning) {
+        val eta = if (hasLiveBus) {
+            liveEta?.etaText
+                ?: liveEta?.estimatedMinutes?.let { "${it.toString().padStart(2, '0')}분" }
+                ?: liveEta?.etaMinutes?.let { "${it.toString().padStart(2, '0')}분" }
+                ?: "조회 중"
+        } else {
+            "운행 전"
+        }
+        val arrival = if (hasLiveBus) {
             firstText(liveEta?.arrivalText, liveEta?.arrivalInfo, "도착 정보 조회 중")
         } else {
             "현재 운행 중인 버스가 없습니다"
@@ -295,10 +306,14 @@ class StudentBusRepository(
             currentStopIndex = currentIndex.coerceIn(0, safeLastIndex),
             busProgressIndex = progressIndex.coerceIn(0f, safeLastIndex.toFloat()),
             plannedDeparture = schedule.departureTime,
-            actualDeparture = firstText(liveEta?.actualDepartureTime, liveEta?.actualDeparture, liveEta?.actualTime, "미정"),
+            actualDeparture = if (hasLiveBus) {
+                firstText(liveEta?.actualDepartureTime, liveEta?.actualDeparture, liveEta?.actualTime, "미정")
+            } else {
+                "미정"
+            },
             etaText = eta,
             stopInfos = infos,
-            isRunning = isRunning && liveEta != null
+            isRunning = hasLiveBus
         )
     }
 
@@ -541,7 +556,7 @@ fun mockRouteDetailFor(schedule: BusSchedule): RouteDetail {
         else -> listOf("정류장1", "정류장2", "정류장3", "정류장4")
         }
     }
-    val currentIndex = if (stops.size >= 7) 2 else (stops.lastIndex - 1).coerceAtLeast(1)
+    val currentIndex = 0
     val infos = stops.associate { stop ->
         val normalized = stop.replace("\n", " ")
         normalized to StopArrivalInfo(

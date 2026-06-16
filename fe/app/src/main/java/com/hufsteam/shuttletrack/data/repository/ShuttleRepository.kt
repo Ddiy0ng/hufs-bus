@@ -122,11 +122,8 @@ class ShuttleRepository(
             )
         }
             .recoverCatching {
-                if (days.isEmpty()) {
-                    apiService.deleteFavorite(specificTimetableId)
-                } else {
-                    apiService.addFavorite(specificTimetableId)
-                }
+                if (days.isEmpty()) throw it
+                apiService.addFavorite(specificTimetableId)
             }
             .getOrThrow()
         Unit
