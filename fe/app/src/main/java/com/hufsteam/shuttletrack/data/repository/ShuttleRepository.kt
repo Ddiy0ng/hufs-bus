@@ -153,14 +153,13 @@ class ShuttleRepository(
             timetableId = timetableId,
             days = days
         )
-        if (isExisting) {
-            runCatching { apiService.updateFavorite(request) }
-                .recoverCatching { apiService.addFavoriteLegacy(request) }
-                .getOrThrow()
-        } else {
-            runCatching { apiService.addFavoriteLegacy(request) }
-                .recoverCatching { apiService.updateFavorite(request) }
-                .getOrThrow()
+        val updateResult = runCatching { apiService.updateFavorite(request) }
+        if (updateResult.isFailure) {
+            if (!isExisting && days.isNotEmpty()) {
+                apiService.addFavoriteLegacy(request)
+            } else {
+                updateResult.getOrThrow()
+            }
         }
         Unit
     }
