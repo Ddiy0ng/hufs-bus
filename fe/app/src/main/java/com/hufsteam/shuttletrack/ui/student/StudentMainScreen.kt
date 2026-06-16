@@ -409,7 +409,7 @@ private fun StudentTimetableContent(
 ) {
     var selectedCampus by remember { mutableStateOf(0) }
     val schedules = if (selectedCampus == 0) onCampusSchedules else offCampusSchedules
-    val routes = schedules.map { it.routeName }.distinct().ifEmpty { if (selectedCampus == 0) onCampusRoutes else offCampusRoutes }
+    val routes = schedules.map { it.routeName }.distinct()
     var selectedRoute by remember(selectedCampus, routes) { mutableStateOf(routes.firstOrNull().orEmpty()) }
     var dropdownOpen by remember { mutableStateOf(false) }
     var selectedHour by remember { mutableStateOf(if (selectedCampus == 0) 9 else 8) }
@@ -505,7 +505,7 @@ private fun StudentTimetableContent(
                 .mapNotNull { it.departureTime.substringBefore(":").toIntOrNull() }
                 .distinct()
                 .sorted()
-            val visibleHours = routeHours.ifEmpty { hours }
+            val visibleHours = routeHours.ifEmpty { if (schedules.isEmpty()) emptyList() else hours }
 
             LaunchedEffect(selectedRoute, selectedCampus, routeHours) {
                 if (routeHours.isNotEmpty() && selectedHour !in routeHours) {
@@ -513,23 +513,25 @@ private fun StudentTimetableContent(
                 }
             }
 
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(visibleHours) { hour ->
-                    val isSelected = hour == selectedHour
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (isSelected) NavyBlue else Color(0xFFF1F3F6))
-                            .clickable { selectedHour = hour }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "${hour.toString().padStart(2, '0')}시",
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) Color.White else Color(0xFF555555)
-                        )
+            if (visibleHours.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(visibleHours) { hour ->
+                        val isSelected = hour == selectedHour
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (isSelected) NavyBlue else Color(0xFFF1F3F6))
+                                .clickable { selectedHour = hour }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${hour.toString().padStart(2, '0')}시",
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color(0xFF555555)
+                            )
+                        }
                     }
                 }
             }

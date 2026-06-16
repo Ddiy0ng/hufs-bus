@@ -2,6 +2,7 @@ package com.hufsteam.shuttletrack.data.repository
 
 import com.google.gson.Gson
 import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.hufsteam.shuttletrack.data.remote.ApiService
 import com.hufsteam.shuttletrack.data.remote.RetrofitClient
 import com.hufsteam.shuttletrack.data.remote.TokenStore
@@ -31,9 +32,14 @@ class ShuttleRepository(
     private val favoriteDays = listOf("MON", "TUE", "WED", "THU", "FRI")
 
     suspend fun getTimetable(inOutCampus: String? = null): Result<List<TimetableResponse>> = runCatching {
-        apiService.getTimetable(inOutCampus)
-            .payloadList()
-            .mapNotNull { gson.decode<TimetableResponse>(it) }
+        val primary = apiService.getTimetable(inOutCampus).toTimetableResponses()
+        if (primary.isNotEmpty() || inOutCampus.isNullOrBlank()) {
+            primary
+        } else {
+            apiService.getTimetable(null)
+                .toTimetableResponses()
+                .filter { it.matchesCampus(inOutCampus) }
+        }
     }
 
     suspend fun getLiveEta(timetableId: Long): Result<LiveEtaResponse?> = runCatching {
@@ -195,6 +201,56 @@ private inline fun <reified T> Gson.decode(element: JsonElement): T? {
     return runCatching { fromJson(element, T::class.java) }.getOrNull()
 }
 
+private fun JsonElement.toTimetableResponses(): List<TimetableResponse> {
+    val gson = RetrofitClient.gson
+    return payloadList()
+        .mapNotNull { gson.decode<TimetableResponse>(it) }
+        .distinctBy {
+            listOfNotNull(
+                it.timetableId ?: it.specificTimetableId ?: it.id,
+                it.inOutCampus,
+                it.departAt ?: it.departureTime ?: it.time,
+                it.startStop,
+                it.endStop
+            ).joinToString(":")
+        }
+}
+
+private fun TimetableResponse.matchesCampus(inOutCampus: String): Boolean {
+    val joined = listOfNotNull(
+        this.inOutCampus,
+        routeName,
+        route,
+        startStop,
+        endStop,
+        routeList?.joinToString(" ") { it.asStringOrObjectName() }
+    ).joinToString(" ").uppercase()
+
+    return when (inOutCampus.uppercase()) {
+        "IN_CAMPUS" -> joined.contains("IN_CAMPUS") ||
+            joined.contains("교내") ||
+            joined.contains("지석묘") ||
+            joined.contains("인문경상관")
+        "OUT_CAMPUS" -> joined.contains("OUT_CAMPUS") ||
+            joined.contains("교외") ||
+            joined.contains("판교") ||
+            joined.contains("경기광주") ||
+            joined.contains("외대")
+        else -> true
+    }
+}
+
+private fun JsonElement.asStringOrObjectName(): String {
+    return when {
+        isJsonPrimitive -> asString
+        isJsonObject -> asJsonObject.get("name")?.asString
+            ?: asJsonObject.get("stopName")?.asString
+            ?: asJsonObject.get("busStopName")?.asString
+            ?: toString()
+        else -> toString()
+    }
+}
+
 private fun JsonElement.withFavoriteMetadata(campus: String, day: String): JsonElement {
     if (!isJsonObject) return this
     val obj = deepCopy().asJsonObject
@@ -222,11 +278,26 @@ private fun JsonElement.payloadList(): List<JsonElement> {
     if (!payload.isJsonObject) return emptyList()
 
     val obj = payload.asJsonObject
-    listOf("items", "schedules", "timetables", "content", "favorites", "data").forEach { key ->
+    if (obj.looksLikePayloadItem()) return listOf(payload)
+
+    listOf("items", "schedules", "timetables", "content", "favorites", "data", "IN_CAMPUS", "OUT_CAMPUS", "inCampus", "outCampus").forEach { key ->
         val value = obj.get(key)
         if (value != null && value.isJsonArray) return value.asJsonArray.toList()
+        if (value != null && value.isJsonObject) {
+            val nested = value.payloadList()
+            if (nested.isNotEmpty()) return nested
+        }
     }
-    return listOf(payload)
+
+    val nestedLists = obj.entrySet()
+        .flatMap { (_, value) ->
+            when {
+                value.isJsonArray -> value.asJsonArray.toList()
+                value.isJsonObject -> value.payloadList()
+                else -> emptyList()
+            }
+        }
+    return nestedLists.ifEmpty { listOf(payload) }
 }
 
 private fun JsonElement.payloadElement(): JsonElement {
@@ -237,4 +308,23 @@ private fun JsonElement.payloadElement(): JsonElement {
         if (value != null && !value.isJsonNull) return value
     }
     return root
+}
+
+private fun JsonObject.looksLikePayloadItem(): Boolean {
+    val itemKeys = setOf(
+        "timetableId",
+        "specificTimetableId",
+        "favoriteId",
+        "busId",
+        "routeId",
+        "departAt",
+        "departureTime",
+        "routeList",
+        "startStop",
+        "endStop",
+        "currentSeats",
+        "title",
+        "content"
+    )
+    return itemKeys.any { has(it) && !get(it).isJsonNull }
 }

@@ -143,6 +143,7 @@ class StudentBusRepository(
             offResult.isFailure && onResult.isFailure -> "서버 시간표를 불러오지 못했습니다."
             offResult.isFailure -> "교외 시간표를 불러오지 못했습니다."
             onResult.isFailure -> "교내 시간표를 불러오지 못했습니다."
+            offSchedules.isEmpty() && onSchedules.isEmpty() -> "서버 시간표 데이터가 비어 있습니다. 관리자 시간표 업로드 또는 서버 DB 반영 후 새로고침해 주세요."
             else -> null
         }
 
