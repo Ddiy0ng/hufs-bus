@@ -153,13 +153,10 @@ class ShuttleRepository(
             timetableId = timetableId,
             days = days
         )
-        val updateResult = runCatching { apiService.updateFavorite(request) }
-        if (updateResult.isFailure) {
-            if (!isExisting && days.isNotEmpty()) {
-                apiService.addFavoriteLegacy(request)
-            } else {
-                updateResult.getOrThrow()
-            }
+        when {
+            isExisting -> apiService.updateFavorite(request)
+            days.isNotEmpty() -> apiService.addFavoriteLegacy(request)
+            else -> return@runCatching
         }
         Unit
     }

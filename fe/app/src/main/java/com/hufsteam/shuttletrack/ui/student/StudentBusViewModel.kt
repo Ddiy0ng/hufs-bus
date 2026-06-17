@@ -85,21 +85,15 @@ class StudentBusViewModel(
 
     fun saveFavorite(schedule: BusSchedule, days: Set<String>) {
         viewModelScope.launch {
-            val hadFavorite = uiState.favoriteSchedules.any { it.schedule.id == schedule.id }
+            val currentFavorites = repository.loadFavorites()
+            val hadFavorite = currentFavorites.any { it.schedule.id == schedule.id } ||
+                uiState.favoriteSchedules.any { it.schedule.id == schedule.id }
             val saved = repository.saveFavorite(schedule, days, hadFavorite)
             if (saved) {
                 val refreshedFavorites = repository.loadFavorites()
-                val nextFavorites = refreshedFavorites
-                    .filterNot { it.schedule.id == schedule.id }
-                    .let { favorites ->
-                        if (days.isEmpty()) {
-                            favorites
-                        } else {
-                            favorites + FavoriteSchedule(schedule, days)
-                        }
-                    }
                 uiState = uiState.copy(
-                    favoriteSchedules = nextFavorites
+                    favoriteSchedules = refreshedFavorites,
+                    errorMessage = null
                 )
             } else {
                 uiState = uiState.copy(errorMessage = "즐겨찾기 설정에 실패했습니다.")
