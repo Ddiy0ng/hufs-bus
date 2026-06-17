@@ -1273,6 +1273,7 @@ private fun FavoriteDaySheet(
     onSave: (Set<String>) -> Unit
 ) {
     var selectedDays by remember(schedule.id) { mutableStateOf(initialDays) }
+    var isSubmitting by remember(schedule.id) { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -1286,10 +1287,28 @@ private fun FavoriteDaySheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 18.dp)
         ) {
-            Text("알림 받을 요일을 선택해 주세요", style = ShuttleRegularTextStyle, color = Color.Black)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("알림 받을 요일을 선택해 주세요", style = ShuttleRegularTextStyle, color = Color.Black)
+                    Spacer(Modifier.height(6.dp))
+                    Text("중복 선택 가능", style = ShuttleRegularTextStyle, color = Color(0xFFB8BEC8))
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "닫기",
+                        tint = Color(0xFF9AA1AB)
+                    )
+                }
+            }
             Spacer(Modifier.height(6.dp))
-            Text("중복 선택 가능", style = ShuttleRegularTextStyle, color = Color(0xFFB8BEC8))
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
 
             notificationDays.forEach { day ->
                 Row(
@@ -1316,14 +1335,32 @@ private fun FavoriteDaySheet(
 
             Spacer(Modifier.height(4.dp))
             Button(
-                onClick = { onSave(selectedDays) },
+                onClick = {
+                    if (!isSubmitting) {
+                        isSubmitting = true
+                        onSave(selectedDays)
+                        onDismiss()
+                    }
+                },
+                enabled = !isSubmitting,
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NavyBlue
+                    containerColor = NavyBlue,
+                    disabledContainerColor = Color(0xFF9FB0C4)
                 )
             ) {
-                Text(if (selectedDays.isEmpty()) "즐겨찾기 해제하기" else "설정하기", style = ShuttleRegularTextStyle, color = Color.White)
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("저장 중", style = ShuttleRegularTextStyle, color = Color.White)
+                } else {
+                    Text(if (selectedDays.isEmpty()) "즐겨찾기 해제하기" else "설정하기", style = ShuttleRegularTextStyle, color = Color.White)
+                }
             }
         }
     }
