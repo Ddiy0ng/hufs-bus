@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -67,6 +68,21 @@ fun DriverOperationScreen(
             scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
         } else {
             driverViewModel.setGpsStartError("위치 권한이 필요합니다")
+        }
+    }
+
+    LaunchedEffect(state, isGpsTracking, route.id) {
+        if (state == OperationState.OPERATING && isGpsTracking) {
+            while (true) {
+                delay(10_000)
+                val location = readCurrentLocation(context)
+                if (location != null) {
+                    driverViewModel.sendCurrentLocation(
+                        latitude = location.latitude,
+                        longitude = location.longitude
+                    )
+                }
+            }
         }
     }
 

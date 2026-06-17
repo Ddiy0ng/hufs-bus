@@ -147,6 +147,31 @@ class DriverViewModel(
         }
     }
 
+    fun sendCurrentLocation(latitude: Double, longitude: Double) {
+        val route = selectedRoute ?: return
+        if (operationState != OperationState.OPERATING) return
+
+        val timetableId = route.timetableId()
+        lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+        viewModelScope.launch {
+            val busId = shuttleRepository.getBusStatuses(timetableId)
+                .getOrNull()
+                ?.busId
+                ?: route.busId
+                ?: timetableId
+
+            shuttleRepository.postDriverLocation(
+                busId = busId,
+                latitude = latitude,
+                longitude = longitude
+            ).onSuccess {
+                operationMessage = "GPS 위치가 서버에 갱신되었습니다"
+            }.onFailure { throwable ->
+                operationMessage = "GPS 갱신 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
+            }
+        }
+    }
+
     fun setGpsStartError(message: String) {
         operationMessage = message
     }

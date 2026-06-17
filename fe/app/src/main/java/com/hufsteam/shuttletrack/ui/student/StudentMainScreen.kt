@@ -181,8 +181,8 @@ fun StudentMainScreen(
                 selected = selectedTab,
                 onTabClick = { tab ->
                     when (tab) {
-                        StudentTab.TIMETABLE -> studentBusViewModel.refreshSchedules()
-                        StudentTab.FAVORITES -> studentBusViewModel.refreshFavorites()
+                        StudentTab.TIMETABLE -> studentBusViewModel.refreshAll()
+                        StudentTab.FAVORITES -> studentBusViewModel.refreshAll()
                         StudentTab.MYPAGE -> Unit
                     }
                     selectedTab = tab
@@ -202,7 +202,7 @@ fun StudentMainScreen(
                     onCampusSchedules = liveOnCampusSchedules,
                     isLoading = studentUiState.isLoading,
                     errorMessage = studentUiState.errorMessage,
-                    onRefresh = { studentBusViewModel.refreshSchedules() },
+                    onRefresh = { studentBusViewModel.refreshAll() },
                     onScheduleClick = {
                         if (viewModel.userRole == UserRole.DRIVER) {
                             onGoDriverOperation(it.toDriverRoute())
@@ -219,8 +219,7 @@ fun StudentMainScreen(
                     routeDetail = liveRouteDetail,
                     isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
                     onRefresh = {
-                        studentBusViewModel.refreshSchedules()
-                        studentBusViewModel.loadRouteStatus(selectedSchedule)
+                        studentBusViewModel.refreshAll(selectedSchedule)
                     },
                     onBackClick = {
                         currentScreen = StudentScreen.TIMETABLE
@@ -231,7 +230,7 @@ fun StudentMainScreen(
 
                 StudentScreen.FAVORITES -> StudentFavoritesContent(
                     favorites = favoriteSchedules,
-                    onRefresh = { studentBusViewModel.refreshFavorites() },
+                    onRefresh = { studentBusViewModel.refreshAll() },
                     onScheduleClick = {
                         selectedSchedule = it.schedule
                         studentBusViewModel.loadRouteStatus(it.schedule)
@@ -254,7 +253,7 @@ fun StudentMainScreen(
                     onGoAdminTimetableManagement = onGoAdminTimetableManagement,
                     driverViewModel = driverViewModel,
                     schedules = liveOffCampusSchedules + liveOnCampusSchedules,
-                    onRefreshSchedules = { studentBusViewModel.refreshSchedules() }
+                    onRefreshSchedules = { studentBusViewModel.refreshAll() }
                 )
             }
 
@@ -1161,7 +1160,10 @@ private fun StudentFavoritesContent(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 20.dp)
                 ) {
-                    items(visibleFavorites) { favorite ->
+                    items(
+                        items = visibleFavorites,
+                        key = { favorite -> "${favorite.schedule.id}-${favorite.schedule.routeName}-${favorite.schedule.departureTime}" }
+                    ) { favorite ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),

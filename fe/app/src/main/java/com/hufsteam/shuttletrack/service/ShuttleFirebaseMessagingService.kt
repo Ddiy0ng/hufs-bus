@@ -46,8 +46,14 @@ class ShuttleFirebaseMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
-        val title = message.notification?.title ?: "외대 셔틀"
-        val body  = message.notification?.body  ?: ""
+        val title = message.notification?.title
+            ?: message.data["title"]
+            ?: "외대 셔틀"
+        val body = message.notification?.body
+            ?: message.data["body"]
+            ?: message.data["message"]
+            ?: message.data["eta"]
+            ?: "셔틀 알림이 도착했습니다."
 
         showNotification(title, body)
     }
@@ -76,6 +82,9 @@ class ShuttleFirebaseMessagingService : FirebaseMessagingService() {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .build()

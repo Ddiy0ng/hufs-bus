@@ -76,6 +76,24 @@ class StudentBusViewModel(
         }
     }
 
+    fun refreshAll(selectedSchedule: BusSchedule? = null) {
+        viewModelScope.launch {
+            uiState = uiState.copy(isLoading = true, errorMessage = null)
+            val scheduleResult = repository.loadSchedules()
+            val favorites = repository.loadFavorites()
+            val routeDetail = selectedSchedule?.let { repository.loadRouteDetail(it) }
+            uiState = uiState.copy(
+                offCampusSchedules = scheduleResult.offCampusSchedules,
+                onCampusSchedules = scheduleResult.onCampusSchedules,
+                favoriteSchedules = favorites,
+                selectedRouteDetail = routeDetail ?: uiState.selectedRouteDetail,
+                isLoading = false,
+                errorMessage = scheduleResult.errorMessage,
+                usingMockData = scheduleResult.usingMockData
+            )
+        }
+    }
+
     fun loadRouteStatus(schedule: BusSchedule) {
         viewModelScope.launch {
             val detail = repository.loadRouteDetail(schedule)
@@ -155,7 +173,7 @@ class StudentBusRepository(
             .orEmpty()
 
         return favorites
-            .groupBy { it.schedule.id }
+            .groupBy { it.favoriteGroupKey() }
             .map { (_, items) ->
                 val first = items.first()
                 first.copy(days = items.flatMap { it.days }.toSet())
@@ -450,6 +468,15 @@ class StudentBusRepository(
             "금", "금요일", "FRI", "FRIDAY" -> "FRI"
             else -> day.trim()
         }
+    }
+
+    private fun FavoriteSchedule.favoriteGroupKey(): String {
+        return listOf(
+            schedule.id.toString(),
+            schedule.campusType,
+            schedule.routeName,
+            schedule.departureTime
+        ).joinToString("|")
     }
 
     private fun resolveCampusType(vararg values: String?): String {
