@@ -84,6 +84,7 @@ private enum class StudentTab    { TIMETABLE, FAVORITES, MYPAGE }
 // ── 데이터 모델 ─────────────────────────────────────────────────
 data class BusSchedule(
     val id: Int,
+    val timetableId: Long? = null,
     val routeName: String,
     val departureTime: String,
     val remainingSeats: Int,
@@ -307,7 +308,7 @@ private fun BusSchedule.toDriverRoute(): DriverRoute {
         scheduledTime = departureTime,
         totalSeats = totalSeats,
         stops = stops,
-        busId = id.toLong()
+        timetableId = timetableId ?: id.toLong()
     )
 }
 

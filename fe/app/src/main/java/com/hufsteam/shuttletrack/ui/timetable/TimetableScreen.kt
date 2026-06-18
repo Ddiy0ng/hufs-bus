@@ -29,7 +29,8 @@ import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 data class TimetableEntry(
     val time: String,
     val seats: Int,
-    val location: String
+    val location: String,
+    val timetableId: Long? = null
 )
 
 data class RouteInfo(
@@ -309,6 +310,7 @@ private fun RouteInfo.toDriverRoute(entry: TimetableEntry): DriverRoute {
         scheduledTime = entry.time,
         totalSeats = 45,
         stops = stopsForRoute(label),
+        timetableId = entry.timetableId,
         busId = busIdForRoute(label)
     )
 }

@@ -221,8 +221,11 @@ class StudentBusRepository(
             ?: fallbackSchedule?.remainingSeats
             ?: FIXED_TOTAL_SEATS
 
+        val resolvedTimetableId = firstLong(timetableId, specificTimetableId, id)
+
         return BusSchedule(
-            id = firstLong(timetableId, specificTimetableId, id)?.toInt() ?: fallbackSchedule?.id ?: index + 1,
+            id = resolvedTimetableId?.toInt() ?: fallbackSchedule?.id ?: index + 1,
+            timetableId = resolvedTimetableId,
             routeName = firstText(routeName, route, fallbackRoute),
             departureTime = firstText(departureTime, departAt, time, plannedDeparture, fallbackSchedule?.departureTime, "00:00"),
             remainingSeats = seatLeft.coerceIn(0, FIXED_TOTAL_SEATS),
@@ -580,6 +583,7 @@ private fun mockSchedulesFromGroups(startId: Int, campusType: String, vararg gro
         group.times.mapIndexed { index, time ->
             BusSchedule(
                 id = nextId++,
+                timetableId = null,
                 routeName = group.routeName,
                 departureTime = time,
                 remainingSeats = mockRemainingSeats(index),

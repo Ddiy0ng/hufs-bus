@@ -31,6 +31,7 @@ data class DriverRoute(
     val scheduledTime: String,
     val totalSeats: Int,
     val stops: List<String>,
+    val timetableId: Long? = null,
     val busId: Long? = null
 )
 
@@ -133,7 +134,10 @@ class DriverViewModel(
                 .getOrNull()
                 ?.busId
                 ?: route?.busId
-                ?: timetableId
+            if (busId == null) {
+                operationMessage = "출발 등록 완료, busId 조회 실패로 GPS 전송을 보류했습니다"
+                return@launch
+            }
 
             shuttleRepository.postDriverLocation(
                 busId = busId,
@@ -158,7 +162,10 @@ class DriverViewModel(
                 .getOrNull()
                 ?.busId
                 ?: route.busId
-                ?: timetableId
+            if (busId == null) {
+                operationMessage = "busId 조회 실패로 GPS 갱신을 보류했습니다"
+                return@launch
+            }
 
             shuttleRepository.postDriverLocation(
                 busId = busId,
@@ -173,6 +180,10 @@ class DriverViewModel(
     }
 
     fun setGpsStartError(message: String) {
+        operationMessage = message
+    }
+
+    fun updateOperationMessage(message: String) {
         operationMessage = message
     }
 
@@ -236,7 +247,7 @@ class DriverViewModel(
 }
 
 private fun DriverRoute.timetableId(): Long {
-    return id.digitsAsLong() ?: busId ?: 1L
+    return timetableId ?: id.digitsAsLong() ?: busId ?: 1L
 }
 
 private fun String.digitsAsLong(): Long? {

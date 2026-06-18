@@ -36,6 +36,7 @@ import com.hufsteam.shuttletrack.ui.theme.NavyBlue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 private val DriverAccentRed = Color(0xFFB83A25)
@@ -65,9 +66,10 @@ fun DriverOperationScreen(
         val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
+            driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
             scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
         } else {
-            driverViewModel.setGpsStartError("위치 권한이 필요합니다")
+            driverViewModel.setGpsStartError("위치 권한이 필요합니다. 앱 설정에서 위치 권한을 허용해 주세요")
         }
     }
 
@@ -206,9 +208,11 @@ fun DriverOperationScreen(
                         text    = "출발 등록하기",
                         enabled = true,
                         onClick = {
+                            driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
                             if (hasLocationPermission(context)) {
                                 scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
                             } else {
+                                driverViewModel.updateOperationMessage("위치 권한을 요청했습니다")
                                 permissionLauncher.launch(
                                     arrayOf(
                                         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -487,9 +491,18 @@ private suspend fun startOperationWithCurrentLocation(
     context: Context,
     driverViewModel: DriverViewModel
 ) {
+    driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
+    if (!hasLocationPermission(context)) {
+        driverViewModel.setGpsStartError("위치 권한이 필요합니다. 앱 설정에서 위치 권한을 허용해 주세요")
+        return
+    }
+    if (!hasEnabledLocationProvider(context)) {
+        driverViewModel.setGpsStartError("휴대폰 위치 서비스가 꺼져 있습니다. 위치를 켠 뒤 다시 눌러주세요")
+        return
+    }
     val location = readCurrentLocation(context)
     if (location == null) {
-        driverViewModel.setGpsStartError("현재 GPS 위치를 확인할 수 없습니다")
+        driverViewModel.setGpsStartError("현재 GPS 위치를 확인할 수 없습니다. 실외나 창가에서 다시 시도해 주세요")
         return
     }
     driverViewModel.startOperation(
@@ -498,53 +511,62 @@ private suspend fun startOperationWithCurrentLocation(
     )
 }
 
-@SuppressLint("MissingPermission")
-private suspend fun readCurrentLocation(context: Context): Location? = suspendCancellableCoroutine { cont ->
-    if (!hasLocationPermission(context)) {
-        cont.resume(null)
-        return@suspendCancellableCoroutine
-    }
-
+private fun hasEnabledLocationProvider(context: Context): Boolean {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        .filter { provider -> runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false) }
-
-    val lastKnownLocation = providers
-        .mapNotNull { provider -> runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull() }
-        .maxByOrNull { it.time }
-
-    if (lastKnownLocation != null && System.currentTimeMillis() - lastKnownLocation.time < 30_000L) {
-        cont.resume(lastKnownLocation)
-        return@suspendCancellableCoroutine
+    return listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).any { provider ->
+        runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false)
     }
+}
 
-    val provider = providers.firstOrNull()
-    if (provider == null) {
-        cont.resume(lastKnownLocation)
-        return@suspendCancellableCoroutine
-    }
-
-    val listener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            if (cont.isActive) cont.resume(location)
-            locationManager.removeUpdates(this)
+@SuppressLint("MissingPermission")
+private suspend fun readCurrentLocation(context: Context): Location? = withTimeoutOrNull(8_000L) {
+    suspendCancellableCoroutine { cont ->
+        if (!hasLocationPermission(context)) {
+            cont.resume(null)
+            return@suspendCancellableCoroutine
         }
 
-        @Deprecated("Deprecated in Android API")
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
+            .filter { provider -> runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false) }
 
-        override fun onProviderEnabled(provider: String) = Unit
+        val lastKnownLocation = providers
+            .mapNotNull { provider -> runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull() }
+            .maxByOrNull { it.time }
 
-        override fun onProviderDisabled(provider: String) = Unit
-    }
+        if (lastKnownLocation != null && System.currentTimeMillis() - lastKnownLocation.time < 10 * 60_000L) {
+            cont.resume(lastKnownLocation)
+            return@suspendCancellableCoroutine
+        }
 
-    runCatching {
-        locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-    }.onFailure {
-        if (cont.isActive) cont.resume(lastKnownLocation)
-    }
+        val provider = providers.firstOrNull()
+        if (provider == null) {
+            cont.resume(lastKnownLocation)
+            return@suspendCancellableCoroutine
+        }
 
-    cont.invokeOnCancellation {
-        locationManager.removeUpdates(listener)
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                if (cont.isActive) cont.resume(location)
+                locationManager.removeUpdates(this)
+            }
+
+            @Deprecated("Deprecated in Android API")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+
+            override fun onProviderEnabled(provider: String) = Unit
+
+            override fun onProviderDisabled(provider: String) = Unit
+        }
+
+        runCatching {
+            locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+        }.onFailure {
+            if (cont.isActive) cont.resume(lastKnownLocation)
+        }
+
+        cont.invokeOnCancellation {
+            locationManager.removeUpdates(listener)
+        }
     }
 }
