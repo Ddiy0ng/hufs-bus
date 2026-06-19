@@ -120,7 +120,7 @@ fun DriverOperationScreen(
         if (state == OperationState.OPERATING) {
             while (true) {
                 driverViewModel.refreshPassengerStateFromServer(showMessage = false)
-                delay(3_000)
+                delay(5_000)
             }
         }
     }

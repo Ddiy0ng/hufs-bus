@@ -170,21 +170,11 @@ fun StudentMainScreen(
     }
 
     LaunchedEffect(currentScreen, selectedSchedule.id) {
-        while (true) {
-            when (currentScreen) {
-                StudentScreen.ROUTE_STATUS -> {
-                    studentBusViewModel.loadRouteStatus(selectedSchedule)
-                }
-                StudentScreen.TIMETABLE, StudentScreen.FAVORITES -> {
-                    studentBusViewModel.refreshAll(showLoading = false)
-                }
-                StudentScreen.MYPAGE -> {
-                    if (viewModel.userRole == UserRole.ADMIN) {
-                        studentBusViewModel.refreshAll(showLoading = false)
-                    }
-                }
+        if (currentScreen == StudentScreen.ROUTE_STATUS) {
+            while (true) {
+                studentBusViewModel.loadRouteStatus(selectedSchedule)
+                delay(5_000)
             }
-            delay(5_000)
         }
     }
 
@@ -1944,6 +1934,28 @@ private fun AdminPassengerControlSection(
         OperationState.OPERATING -> "운행 중"
         OperationState.COMPLETED -> "운행 완료"
     }
+    val manualSchedules = remember(schedules) {
+        schedules
+            .distinctBy { it.id }
+            .sortedWith(compareBy<BusSchedule>({ it.campusType }, { it.routeName }, { it.departureTime }))
+    }
+    val manualHours = remember(manualSchedules) {
+        manualSchedules
+            .mapNotNull { it.departureHourOrNull() }
+            .distinct()
+            .sorted()
+    }
+    var manualHour by rememberSaveable { mutableStateOf<Int?>(null) }
+    LaunchedEffect(manualHours) {
+        if (manualHour == null || manualHours.none { it == manualHour }) {
+            manualHour = manualHours.closestToCurrentHourOrNull()
+        }
+    }
+    val manualCandidates = remember(manualSchedules, manualHour) {
+        manualSchedules
+            .filter { it.departureHourOrNull() == manualHour }
+            .sortedWith(compareBy<BusSchedule>({ it.departureTime }, { it.routeName }))
+    }
 
     fun refreshRunningOperation(showNotice: Boolean) {
         if (isRefreshingOperation) return
@@ -2029,17 +2041,55 @@ private fun AdminPassengerControlSection(
             color = Color(0xFF777777)
         )
         Spacer(Modifier.height(8.dp))
-        schedules
-            .distinctBy { it.id }
-            .sortedBy { it.departureTime.distanceFromNowMinutes() }
-            .take(6)
-            .forEach { schedule ->
+        if (manualSchedules.isEmpty()) {
+            Text(
+                "등록된 시간표가 없습니다. 관리자 시간표 등록 후 다시 새로고침해 주세요.",
+                fontSize = 12.sp,
+                color = Color(0xFF999999)
+            )
+        } else {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(manualHours) { hour ->
+                    FilterChip(
+                        selected = manualHour == hour,
+                        onClick = { manualHour = hour },
+                        label = {
+                            Text(
+                                "${hour.toString().padStart(2, '0')}시",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        shape = RoundedCornerShape(18.dp),
+                        border = null,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = NavyBlue,
+                            selectedLabelColor = Color.White,
+                            containerColor = Color(0xFFF2F4F7),
+                            labelColor = Color(0xFF777777)
+                        )
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            if (manualCandidates.isEmpty()) {
+                Text(
+                    "선택한 시간대에 등록된 운행이 없습니다.",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999)
+                )
+            }
+            manualCandidates.take(12).forEach { schedule ->
                 AdminRouteSelectRow(
                     route = schedule.toDriverRoute(),
                     onClick = { selectManualSchedule(schedule) }
                 )
                 Spacer(Modifier.height(8.dp))
             }
+        }
         return
     }
 
@@ -2213,6 +2263,16 @@ private fun String.distanceFromNowMinutes(): Int {
     }
     val direct = kotlin.math.abs(scheduled - now)
     return minOf(direct, 24 * 60 - direct)
+}
+
+private fun BusSchedule.departureHourOrNull(): Int? {
+    return departureTime.take(2).toIntOrNull()
+}
+
+private fun List<Int>.closestToCurrentHourOrNull(): Int? {
+    if (isEmpty()) return null
+    val now = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    return minByOrNull { kotlin.math.abs(it - now) } ?: firstOrNull()
 }
 
 private fun String.toDisplayClockText(): String {
