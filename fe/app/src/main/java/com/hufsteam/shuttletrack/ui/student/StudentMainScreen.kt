@@ -2246,6 +2246,7 @@ private fun StudentBottomBar(selected: StudentTab, onTabClick: (StudentTab) -> U
         modifier = Modifier
             .fillMaxWidth()
             .background(NavyBlue)
+            .navigationBarsPadding()
             .padding(vertical = 8.dp)
     ) {
         StudentTabItem(Icons.Filled.Schedule, "시간표",   selected == StudentTab.TIMETABLE, { onTabClick(StudentTab.TIMETABLE)  }, Modifier.weight(1f))
