@@ -1923,6 +1923,7 @@ private fun AdminPassengerControlSection(
     val scope = rememberCoroutineScope()
     val shuttleRepository = remember { ShuttleRepository() }
     var isRefreshingOperation by remember { mutableStateOf(false) }
+    var manualSelectionMode by remember { mutableStateOf(false) }
     val route = driverViewModel.selectedRoute
     val operationState = driverViewModel.operationState
     val passengers = driverViewModel.passengerCount
@@ -1943,6 +1944,7 @@ private fun AdminPassengerControlSection(
                 .onSuccess { snapshot ->
                     if (snapshot != null) {
                         driverViewModel.syncRunningRouteFromServer(snapshot.route, snapshot.passengers)
+                        manualSelectionMode = false
                         if (showNotice) {
                             onNotice("운행 중인 시간표를 불러왔습니다")
                         }
@@ -1959,8 +1961,26 @@ private fun AdminPassengerControlSection(
         }
     }
 
-    LaunchedEffect(schedules, route?.id, operationState) {
-        if (route == null || operationState != OperationState.OPERATING) {
+    fun selectManualSchedule(schedule: BusSchedule) {
+        scope.launch {
+            buildAdminOperationSnapshot(schedule, shuttleRepository, requireRunning = false)
+                .onSuccess { snapshot ->
+                    if (snapshot != null) {
+                        driverViewModel.syncRunningRouteFromServer(snapshot.route, snapshot.passengers)
+                        manualSelectionMode = false
+                        onNotice("선택한 시간표로 수기 집계를 시작합니다")
+                    } else {
+                        onNotice("시간표 상태를 불러오지 못했습니다")
+                    }
+                }
+                .onFailure { throwable ->
+                    onNotice("시간표 선택 실패: ${throwable.message ?: "서버 응답 확인 필요"}")
+                }
+        }
+    }
+
+    LaunchedEffect(schedules, route?.id, operationState, manualSelectionMode) {
+        if (!manualSelectionMode && (route == null || operationState != OperationState.OPERATING)) {
             refreshRunningOperation(showNotice = false)
         }
     }
@@ -1993,6 +2013,24 @@ private fun AdminPassengerControlSection(
             fontSize = 12.sp,
             color = Color(0xFF999999)
         )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "자동 조회가 안 되면 아래에서 운행 시간표를 직접 선택해 수기 집계를 시작할 수 있습니다.",
+            fontSize = 12.sp,
+            color = Color(0xFF777777)
+        )
+        Spacer(Modifier.height(8.dp))
+        schedules
+            .distinctBy { it.id }
+            .sortedBy { it.departureTime.distanceFromNowMinutes() }
+            .take(6)
+            .forEach { schedule ->
+                AdminRouteSelectRow(
+                    route = schedule.toDriverRoute(),
+                    onClick = { selectManualSchedule(schedule) }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
         return
     }
 
@@ -2084,6 +2122,18 @@ private fun AdminPassengerControlSection(
                 }
             )
             Spacer(Modifier.height(8.dp))
+            AdminPassengerButton(
+                text = "시간표 직접 다시 선택",
+                enabled = true,
+                filled = false,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    manualSelectionMode = true
+                    driverViewModel.clearSelectedRoute()
+                    onNotice("아래 시간표에서 집계 대상을 직접 선택해 주세요")
+                }
+            )
+            Spacer(Modifier.height(8.dp))
             Text(
                 driverViewModel.operationMessage,
                 fontSize = 12.sp,
@@ -2111,25 +2161,33 @@ private suspend fun findRunningAdminOperation(
     shuttleRepository: ShuttleRepository
 ): Result<AdminOperationSnapshot?> = runCatching {
     val snapshots = schedules.distinctBy { it.id }.mapNotNull { schedule ->
-        val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull() ?: return@mapNotNull null
-        if (!busStatus.status.isRunningBusStatus()) return@mapNotNull null
-
-        val totalSeats = busStatus.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
-        val serverPassengers = busStatus.currentSeats
-            ?: busStatus.currentPassengers
-            ?: busStatus.passengerCount
-            ?: (busStatus.remainingSeats ?: busStatus.availableSeats)?.let { totalSeats - it }
-            ?: (totalSeats - schedule.remainingSeats)
-
-        val passengers = serverPassengers.coerceIn(0, totalSeats)
-        val route = schedule
-            .copy(totalSeats = totalSeats, remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats))
-            .toDriverRoute()
-            .copy(busId = busStatus.busId ?: schedule.id.toLong())
-
-        AdminOperationSnapshot(route = route, passengers = passengers)
+        buildAdminOperationSnapshot(schedule, shuttleRepository, requireRunning = true).getOrNull()
     }
     snapshots.minByOrNull { it.route.scheduledTime.distanceFromNowMinutes() }
+}
+
+private suspend fun buildAdminOperationSnapshot(
+    schedule: BusSchedule,
+    shuttleRepository: ShuttleRepository,
+    requireRunning: Boolean
+): Result<AdminOperationSnapshot?> = runCatching {
+    val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+    if (requireRunning && !busStatus?.status.isRunningBusStatus()) return@runCatching null
+
+    val totalSeats = busStatus?.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+    val serverPassengers = busStatus?.currentSeats
+        ?: busStatus?.currentPassengers
+        ?: busStatus?.passengerCount
+        ?: (busStatus?.remainingSeats ?: busStatus?.availableSeats)?.let { totalSeats - it }
+        ?: (totalSeats - schedule.remainingSeats)
+
+    val passengers = serverPassengers.coerceIn(0, totalSeats)
+    val route = schedule
+        .copy(totalSeats = totalSeats, remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats))
+        .toDriverRoute()
+        .copy(busId = busStatus?.busId ?: schedule.id.toLong())
+
+    AdminOperationSnapshot(route = route, passengers = passengers)
 }
 
 private fun String?.isRunningBusStatus(): Boolean {
