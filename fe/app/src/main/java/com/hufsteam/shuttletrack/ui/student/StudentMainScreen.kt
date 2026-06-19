@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
@@ -55,6 +57,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -157,8 +160,8 @@ fun StudentMainScreen(
     var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.firstOrNull() ?: offCampusSchedules.first()) }
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
     val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
-    val liveRouteDetail = (studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule))
-        .withSeatText(liveSelectedSchedule)
+    val rawRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule)
+    val liveRouteDetail = if (rawRouteDetail.isRunning) rawRouteDetail else rawRouteDetail.withSeatText(liveSelectedSchedule)
 
     LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
@@ -174,6 +177,11 @@ fun StudentMainScreen(
                 delay(5_000)
             }
         }
+    }
+
+    BackHandler(enabled = currentScreen != StudentScreen.TIMETABLE || selectedTab != StudentTab.TIMETABLE) {
+        currentScreen = StudentScreen.TIMETABLE
+        selectedTab = StudentTab.TIMETABLE
     }
 
     Scaffold(
@@ -407,12 +415,12 @@ private fun StudentTimetableContent(
     onRefresh: () -> Unit,
     onScheduleClick: (BusSchedule) -> Unit
 ) {
-    var selectedCampus by remember { mutableStateOf(0) }
+    var selectedCampus by rememberSaveable { mutableStateOf(0) }
     val schedules = if (selectedCampus == 0) onCampusSchedules else offCampusSchedules
     val routes = schedules.map { it.routeName }.distinct()
-    var selectedRoute by remember(selectedCampus, routes) { mutableStateOf(routes.firstOrNull().orEmpty()) }
+    var selectedRoute by rememberSaveable { mutableStateOf("") }
     var dropdownOpen by remember { mutableStateOf(false) }
-    var selectedHour by remember { mutableStateOf(if (selectedCampus == 0) 9 else 8) }
+    var selectedHour by rememberSaveable { mutableStateOf(9) }
 
     LaunchedEffect(selectedCampus, routes) {
         if (selectedRoute !in routes) selectedRoute = routes.firstOrNull().orEmpty()
@@ -666,19 +674,25 @@ private fun StudentRouteStatusContent(
 
             Box(
                 modifier = Modifier
-                    .offset(x = 139.dp, y = 174.dp)
-                    .width(95.dp)
+                    .offset(x = 122.dp, y = 174.dp)
+                    .width(129.dp)
                     .height(31.dp)
                     .clip(RoundedCornerShape(50.dp))
                     .border(3.dp, if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFFD8DEE8), RoundedCornerShape(50.dp))
                     .background(Color.White)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}" else "운행 전",
-                    style = ShuttleRegularTextStyle,
-                    color = if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFF999999)
+                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}".replace("조회 중", "조회중") else "운행 전",
+                    style = ShuttleRegularTextStyle.copy(
+                        fontSize = 13.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFF999999),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -697,7 +711,7 @@ private fun StudentRouteStatusContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("출발 계획 | ${routeDetail.plannedDeparture}", style = ShuttleRegularTextStyle, color = Color(0xFF333333))
-                Text("실제 출발 | ${routeDetail.actualDeparture}", style = ShuttleRegularTextStyle, color = Color(0xFF333333))
+                Text("실제 출발 | ${routeDetail.actualDeparture.toDisplayClockText()}", style = ShuttleRegularTextStyle, color = Color(0xFF333333))
             }
 
             Box(
@@ -1450,6 +1464,22 @@ private fun StudentMyPageContent(
         }
     }
 
+    var isPageRefreshing by remember { mutableStateOf(false) }
+    fun refreshMyPage() {
+        if (isPageRefreshing) return
+        scope.launch {
+            isPageRefreshing = true
+            onRefreshSchedules()
+            delay(700)
+            isPageRefreshing = false
+        }
+    }
+
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        isRefreshing = isPageRefreshing,
+        onRefresh = { refreshMyPage() }
+    ) {
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Column(modifier = Modifier.fillMaxSize()) {
             MyPageProfileHeader(
@@ -1639,6 +1669,7 @@ private fun StudentMyPageContent(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+    }
     }
 }
 
@@ -2044,7 +2075,7 @@ private fun AdminPassengerControlSection(
             Spacer(Modifier.height(12.dp))
             AdminPassengerButton(
                 text = if (isRefreshingOperation) "조회 중" else "운행 상태 새로고침",
-                enabled = !isOperating,
+                enabled = !isRefreshingOperation,
                 filled = false,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
@@ -2079,17 +2110,15 @@ private suspend fun findRunningAdminOperation(
     schedules: List<BusSchedule>,
     shuttleRepository: ShuttleRepository
 ): Result<AdminOperationSnapshot?> = runCatching {
-    schedules.distinctBy { it.id }.forEach { schedule ->
-        val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull() ?: return@forEach
-        if (!busStatus.status.isRunningBusStatus()) return@forEach
+    val snapshots = schedules.distinctBy { it.id }.mapNotNull { schedule ->
+        val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull() ?: return@mapNotNull null
+        if (!busStatus.status.isRunningBusStatus()) return@mapNotNull null
 
         val totalSeats = busStatus.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
-        val serverRemainingSeats = busStatus.currentSeats
-            ?: busStatus.remainingSeats
-            ?: busStatus.availableSeats
-        val serverPassengers = busStatus.currentPassengers
+        val serverPassengers = busStatus.currentSeats
+            ?: busStatus.currentPassengers
             ?: busStatus.passengerCount
-            ?: serverRemainingSeats?.let { totalSeats - it }
+            ?: (busStatus.remainingSeats ?: busStatus.availableSeats)?.let { totalSeats - it }
             ?: (totalSeats - schedule.remainingSeats)
 
         val passengers = serverPassengers.coerceIn(0, totalSeats)
@@ -2098,13 +2127,31 @@ private suspend fun findRunningAdminOperation(
             .toDriverRoute()
             .copy(busId = busStatus.busId ?: schedule.id.toLong())
 
-        return@runCatching AdminOperationSnapshot(route = route, passengers = passengers)
+        AdminOperationSnapshot(route = route, passengers = passengers)
     }
-    null
+    snapshots.minByOrNull { it.route.scheduledTime.distanceFromNowMinutes() }
 }
 
 private fun String?.isRunningBusStatus(): Boolean {
     return this?.trim()?.uppercase() == "RUNNING"
+}
+
+private fun String.distanceFromNowMinutes(): Int {
+    val parts = take(5).split(":")
+    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return Int.MAX_VALUE
+    val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    val scheduled = hour * 60 + minute
+    val now = java.util.Calendar.getInstance().let {
+        it.get(java.util.Calendar.HOUR_OF_DAY) * 60 + it.get(java.util.Calendar.MINUTE)
+    }
+    val direct = kotlin.math.abs(scheduled - now)
+    return minOf(direct, 24 * 60 - direct)
+}
+
+private fun String.toDisplayClockText(): String {
+    if (this == "미정") return this
+    val clockPattern = Regex("""\b([01]?\d|2[0-3]):([0-5]\d)""")
+    return clockPattern.find(this)?.value ?: this
 }
 
 @Composable

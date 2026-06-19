@@ -229,9 +229,12 @@ class DriverViewModel(
             shuttleRepository.postBusTag(timetableId, BusTagRequest(type = type))
                 .onSuccess { response ->
                     val total = response?.totalSeats ?: route.totalSeats
-                    val currentSeats = response?.currentSeats
-                    if (currentSeats != null) {
-                        passengerCount = (total - currentSeats).coerceIn(0, total)
+                    val currentPassengers = response?.currentSeats
+                    val remainingSeats = response?.remainingSeats
+                    passengerCount = when {
+                        currentPassengers != null -> currentPassengers.coerceIn(0, total)
+                        remainingSeats != null -> (total - remainingSeats).coerceIn(0, total)
+                        else -> passengerCount.coerceIn(0, total)
                     }
                     operationMessage = if (type == "BOARD") {
                         "탑승 수가 서버에 반영되었습니다"

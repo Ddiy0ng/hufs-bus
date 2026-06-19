@@ -322,10 +322,15 @@ class StudentBusRepository(
             0f
         }
 
-        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats, busStatus?.currentSeats, liveEta?.currentSeats)
-            ?: busStatus?.currentPassengers?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
-            ?: busStatus?.passengerCount?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
-            ?: schedule.remainingSeats
+        val totalSeats = busStatus?.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats)
+            ?: firstInt(
+                busStatus?.currentSeats,
+                busStatus?.currentPassengers,
+                busStatus?.passengerCount,
+                liveEta?.currentSeats
+            )?.let { (totalSeats - it).coerceIn(0, totalSeats) }
+            ?: schedule.remainingSeats.coerceIn(0, totalSeats)
         val eta = if (hasLiveBus) {
             liveEta?.etaText
                 ?: liveEta?.estimatedMinutes?.let { "${it.toString().padStart(2, '0')}분" }
