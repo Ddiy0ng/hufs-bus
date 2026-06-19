@@ -76,9 +76,11 @@ class StudentBusViewModel(
         }
     }
 
-    fun refreshAll(selectedSchedule: BusSchedule? = null) {
+    fun refreshAll(selectedSchedule: BusSchedule? = null, showLoading: Boolean = true) {
         viewModelScope.launch {
-            uiState = uiState.copy(isLoading = true, errorMessage = null)
+            if (showLoading) {
+                uiState = uiState.copy(isLoading = true, errorMessage = null)
+            }
             val scheduleResult = repository.loadSchedules()
             val favorites = repository.loadFavorites()
             val routeDetail = selectedSchedule?.let { repository.loadRouteDetail(it) }
@@ -147,9 +149,11 @@ class StudentBusRepository(
 
         val offSchedules = offResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOffCampusSchedules, "교외") }
+            ?.withNearbySeatStatuses()
             .orEmpty()
         val onSchedules = onResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOnCampusSchedules, "교내") }
+            ?.withNearbySeatStatuses()
             .orEmpty()
         val errorMessage = when {
             offResult.isFailure && onResult.isFailure -> "서버 시간표를 불러오지 못했습니다."
@@ -233,6 +237,34 @@ class StudentBusRepository(
             currentLocation = firstText(currentLocation, currentStop, "운행 전"),
             routeStops = routeStops.ifEmpty { fallbackSchedule?.routeStops.orEmpty() },
             campusType = resolveCampusType(inOutCampus, routeName, route, fallbackRoute, defaultCampusType)
+        )
+    }
+
+    private suspend fun List<BusSchedule>.withNearbySeatStatuses(maxItems: Int = 24): List<BusSchedule> {
+        val targetIds = sortedBy { it.departureTime.distanceFromNowMinutes() }
+            .take(maxItems)
+            .map { it.id }
+            .toSet()
+        return map { schedule ->
+            if (schedule.id in targetIds) schedule.withLatestSeatStatus() else schedule
+        }
+    }
+
+    private suspend fun BusSchedule.withLatestSeatStatus(): BusSchedule {
+        val busStatus = shuttleRepository.getBusStatuses(id.toLong()).getOrNull() ?: return this
+        val total = busStatus.totalSeats ?: totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+        val remaining = firstInt(busStatus.remainingSeats, busStatus.availableSeats)
+            ?: firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
+                ?.let { (total - it).coerceIn(0, total) }
+            ?: remainingSeats.coerceIn(0, total)
+        val locationText = busStatus.currentStopName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "현재 위치 | $it" }
+            ?: currentLocation
+        return copy(
+            totalSeats = total,
+            remainingSeats = remaining,
+            currentLocation = locationText
         )
     }
 
@@ -449,6 +481,17 @@ class StudentBusRepository(
 
     private fun firstDouble(vararg values: Double?): Double? {
         return values.firstOrNull { it != null }
+    }
+
+    private fun String.distanceFromNowMinutes(): Int {
+        val parts = take(5).split(":")
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: return Int.MAX_VALUE
+        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        val scheduled = hour * 60 + minute
+        val calendar = java.util.Calendar.getInstance()
+        val now = calendar.get(java.util.Calendar.HOUR_OF_DAY) * 60 + calendar.get(java.util.Calendar.MINUTE)
+        val direct = kotlin.math.abs(scheduled - now)
+        return minOf(direct, 24 * 60 - direct)
     }
 
     private fun String.cleanStopName(): String {

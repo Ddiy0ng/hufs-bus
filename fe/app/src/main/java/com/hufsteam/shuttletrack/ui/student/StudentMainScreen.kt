@@ -160,8 +160,7 @@ fun StudentMainScreen(
     var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.firstOrNull() ?: offCampusSchedules.first()) }
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
     val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
-    val rawRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule)
-    val liveRouteDetail = if (rawRouteDetail.isRunning) rawRouteDetail else rawRouteDetail.withSeatText(liveSelectedSchedule)
+    val liveRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule).withSeatText(liveSelectedSchedule)
 
     LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
@@ -171,11 +170,21 @@ fun StudentMainScreen(
     }
 
     LaunchedEffect(currentScreen, selectedSchedule.id) {
-        if (currentScreen == StudentScreen.ROUTE_STATUS) {
-            while (true) {
-                studentBusViewModel.loadRouteStatus(selectedSchedule)
-                delay(5_000)
+        while (true) {
+            when (currentScreen) {
+                StudentScreen.ROUTE_STATUS -> {
+                    studentBusViewModel.loadRouteStatus(selectedSchedule)
+                }
+                StudentScreen.TIMETABLE, StudentScreen.FAVORITES -> {
+                    studentBusViewModel.refreshAll(showLoading = false)
+                }
+                StudentScreen.MYPAGE -> {
+                    if (viewModel.userRole == UserRole.ADMIN) {
+                        studentBusViewModel.refreshAll(showLoading = false)
+                    }
+                }
             }
+            delay(5_000)
         }
     }
 

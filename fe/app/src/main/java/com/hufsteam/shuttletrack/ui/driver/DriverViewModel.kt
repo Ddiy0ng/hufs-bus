@@ -187,6 +187,36 @@ class DriverViewModel(
         operationMessage = message
     }
 
+    fun refreshPassengerStateFromServer(showMessage: Boolean = false) {
+        val route = selectedRoute ?: return
+        val timetableId = route.timetableId()
+        viewModelScope.launch {
+            shuttleRepository.getBusStatuses(timetableId)
+                .onSuccess { response ->
+                    val total = response?.totalSeats ?: route.totalSeats
+                    val passengers = response?.currentSeats
+                        ?: response?.currentPassengers
+                        ?: response?.passengerCount
+                        ?: (response?.remainingSeats ?: response?.availableSeats)?.let { total - it }
+                    if (passengers != null) {
+                        passengerCount = passengers.coerceIn(0, total)
+                    }
+                    selectedRoute = route.copy(
+                        totalSeats = total,
+                        busId = response?.busId ?: route.busId
+                    )
+                    if (showMessage) {
+                        operationMessage = "서버 좌석 상태를 새로고침했습니다"
+                    }
+                }
+                .onFailure { throwable ->
+                    if (showMessage) {
+                        operationMessage = "좌석 상태 새로고침 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
+                    }
+                }
+        }
+    }
+
     fun endOperation() {
         operationState = OperationState.COMPLETED
         isGpsTracking = false
