@@ -12,6 +12,10 @@ import com.hufsteam.shuttletrack.data.remote.dto.FavoriteResponse
 import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 
 private const val OFF_CAMPUS = 1
@@ -33,7 +37,8 @@ data class RouteDetail(
     val actualDeparture: String,
     val etaText: String,
     val stopInfos: Map<String, StopArrivalInfo>,
-    val isRunning: Boolean = false
+    val isRunning: Boolean = false,
+    val statusText: String = "운행 전"
 ) {
     fun infoFor(stopName: String): StopArrivalInfo {
         val normalized = stopName.replace("\n", " ")
@@ -56,6 +61,7 @@ class StudentBusViewModel(
 ) : ViewModel() {
     var uiState by mutableStateOf(StudentBusUiState())
         private set
+    private var routeStatusJob: Job? = null
 
     init {
         refreshSchedules()
@@ -101,6 +107,25 @@ class StudentBusViewModel(
             val detail = repository.loadRouteDetail(schedule)
             uiState = uiState.copy(selectedRouteDetail = detail)
         }
+    }
+
+    fun startRouteStatusUpdates(schedule: BusSchedule) {
+        routeStatusJob?.cancel()
+        routeStatusJob = viewModelScope.launch {
+            repository.subscribeRouteDetail(schedule)
+                .catch {
+                    val detail = repository.loadRouteDetail(schedule)
+                    uiState = uiState.copy(selectedRouteDetail = detail)
+                }
+                .collectLatest { detail ->
+                    uiState = uiState.copy(selectedRouteDetail = detail)
+                }
+        }
+    }
+
+    fun stopRouteStatusUpdates() {
+        routeStatusJob?.cancel()
+        routeStatusJob = null
     }
 
     fun saveFavorite(schedule: BusSchedule, days: Set<String>) {
@@ -149,11 +174,9 @@ class StudentBusRepository(
 
         val offSchedules = offResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOffCampusSchedules, "교외") }
-            ?.withNearbySeatStatuses()
             .orEmpty()
         val onSchedules = onResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOnCampusSchedules, "교내") }
-            ?.withNearbySeatStatuses()
             .orEmpty()
         val errorMessage = when {
             offResult.isFailure && onResult.isFailure -> "서버 시간표를 불러오지 못했습니다."
@@ -195,6 +218,15 @@ class StudentBusRepository(
             return mockRouteDetailFor(schedule)
         }
         return routeDetailFromApi(schedule, liveEta, busStatus)
+    }
+
+    fun subscribeRouteDetail(schedule: BusSchedule) = flow {
+        emit(loadRouteDetail(schedule))
+        shuttleRepository.subscribeLiveEta(schedule.id.toLong())
+            .collect { liveEta ->
+                val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+                emit(routeDetailFromApi(schedule, liveEta, busStatus))
+            }
     }
 
     suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>, isExisting: Boolean): Boolean {
@@ -305,14 +337,21 @@ class StudentBusRepository(
         liveEta: LiveEtaResponse?,
         busStatus: BusStatusResponse?
     ): RouteDetail {
-        val statusIsRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
-        val hasTrackedStop = busStatus?.currentStopSequence != null || !busStatus?.currentStopName.isNullOrBlank()
+        val status = firstText(liveEta?.status, busStatus?.status).uppercase()
+        val statusIsRunning = status == "RUNNING"
+        val statusIsDone = status == "DONE"
+        val liveCurrentStopName = firstText(liveEta?.currentStopName, liveEta?.currentStop)
+        val hasTrackedStop = busStatus?.currentStopSequence != null ||
+            !busStatus?.currentStopName.isNullOrBlank() ||
+            liveEta?.currentStopSequence != null ||
+            liveCurrentStopName.isNotBlank()
         val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop)
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
         val fallbackStops = schedule.routeStops.ifEmpty { mockRouteDetailFor(schedule).stops }
         val stopPoints = apiStopPoints.ifEmpty { fallbackStops.map { RouteStopPoint(it, null, null) } }
         val stops = stopPoints.map { it.name }
-        val currentStopNameIndex = busStatus?.currentStopName?.let { currentStop ->
+        val currentStopName = firstText(busStatus?.currentStopName, liveCurrentStopName)
+        val currentStopNameIndex = currentStopName.takeIf { it.isNotBlank() }?.let { currentStop ->
             stops.indexOfFirst { it.cleanStopName() == currentStop.cleanStopName() }
         }?.takeIf { it >= 0 }
 
@@ -321,6 +360,7 @@ class StudentBusRepository(
                 liveEta?.currentStopIndex,
                 liveEta?.busStopIndex,
                 liveEta?.currentIndex,
+                liveEta?.currentStopSequence?.minus(1),
                 busStatus?.currentStopSequence?.minus(1),
                 currentStopNameIndex
             ) ?: 0
@@ -363,16 +403,25 @@ class StudentBusRepository(
                 liveEta?.currentSeats
             )?.let { (totalSeats - it).coerceIn(0, totalSeats) }
             ?: schedule.remainingSeats.coerceIn(0, totalSeats)
+        val statusText = when {
+            statusIsRunning -> "운행 중"
+            statusIsDone -> "운행 종료"
+            else -> "운행 전"
+        }
         val eta = if (hasLiveBus) {
             liveEta?.etaText
                 ?: liveEta?.estimatedMinutes?.let { "${it.toString().padStart(2, '0')}분" }
                 ?: liveEta?.etaMinutes?.let { "${it.toString().padStart(2, '0')}분" }
                 ?: "조회 중"
+        } else if (statusIsDone) {
+            "운행 종료"
         } else {
             "운행 전"
         }
         val arrival = if (hasLiveBus) {
             firstText(liveEta?.arrivalText, liveEta?.arrivalInfo, "도착 정보 조회 중")
+        } else if (statusIsDone) {
+            "운행이 종료되었습니다"
         } else {
             "현재 운행 중인 버스가 없습니다"
         }
@@ -399,7 +448,8 @@ class StudentBusRepository(
             },
             etaText = eta,
             stopInfos = infos,
-            isRunning = hasLiveBus
+            isRunning = hasLiveBus,
+            statusText = statusText
         )
     }
 

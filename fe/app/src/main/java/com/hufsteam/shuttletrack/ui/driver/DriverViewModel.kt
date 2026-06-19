@@ -1,5 +1,6 @@
 package com.hufsteam.shuttletrack.ui.driver
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 
 import androidx.compose.runtime.mutableStateOf
@@ -12,6 +13,8 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+private const val DRIVER_GPS_TAG = "DriverGps"
 
 // ── 상태 열거형 ───────────────────────────────────────────────
 
@@ -85,7 +88,7 @@ class DriverViewModel(
     var isGpsTracking by mutableStateOf(false)
         private set
 
-    var operationMessage by mutableStateOf("출발 전입니다")
+    var operationMessage by mutableStateOf("운행 전입니다")
         private set
 
     var lastGpsText by mutableStateOf<String?>(null)
@@ -136,8 +139,10 @@ class DriverViewModel(
                 ?: route?.busId
             if (busId == null) {
                 operationMessage = "출발 등록 완료, busId 조회 실패로 GPS 전송을 보류했습니다"
+                Log.w(DRIVER_GPS_TAG, "startOperation skipped: busId is null, timetableId=$timetableId")
                 return@launch
             }
+            selectedRoute = route?.copy(busId = busId)
 
             shuttleRepository.postDriverLocation(
                 busId = busId,
@@ -145,8 +150,10 @@ class DriverViewModel(
                 longitude = longitude
             ).onSuccess {
                 operationMessage = "GPS 위치가 서버에 전송되었습니다"
+                Log.i(DRIVER_GPS_TAG, "initial location sent: busId=$busId lat=$latitude lng=$longitude")
             }.onFailure { throwable ->
                 operationMessage = "GPS 전송 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
+                Log.e(DRIVER_GPS_TAG, "initial location failed: busId=$busId lat=$latitude lng=$longitude", throwable)
             }
         }
     }
@@ -158,13 +165,17 @@ class DriverViewModel(
         val timetableId = route.timetableId()
         lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
         viewModelScope.launch {
-            val busId = shuttleRepository.getBusStatuses(timetableId)
-                .getOrNull()
-                ?.busId
-                ?: route.busId
+            val busId = route.busId
+                ?: shuttleRepository.getBusStatuses(timetableId)
+                    .getOrNull()
+                    ?.busId
             if (busId == null) {
                 operationMessage = "busId 조회 실패로 GPS 갱신을 보류했습니다"
+                Log.w(DRIVER_GPS_TAG, "location update skipped: busId is null, timetableId=$timetableId")
                 return@launch
+            }
+            if (route.busId == null) {
+                selectedRoute = route.copy(busId = busId)
             }
 
             shuttleRepository.postDriverLocation(
@@ -173,8 +184,10 @@ class DriverViewModel(
                 longitude = longitude
             ).onSuccess {
                 operationMessage = "GPS 위치가 서버에 갱신되었습니다"
+                Log.i(DRIVER_GPS_TAG, "location update sent: busId=$busId lat=$latitude lng=$longitude")
             }.onFailure { throwable ->
                 operationMessage = "GPS 갱신 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
+                Log.e(DRIVER_GPS_TAG, "location update failed: busId=$busId lat=$latitude lng=$longitude", throwable)
             }
         }
     }
@@ -243,7 +256,7 @@ class DriverViewModel(
         passengerCount      = 0
         actualDepartureTime = null
         isGpsTracking       = false
-        operationMessage    = "출발 전입니다"
+        operationMessage    = "운행 전입니다"
         lastGpsText         = null
     }
 

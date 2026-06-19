@@ -98,6 +98,8 @@ data class LiveEtaResponse(
     val actualDeparture: String? = null,
     val actualTime: String? = null,
     val currentStop: String? = null,
+    val currentStopName: String? = null,
+    val currentStopSequence: Int? = null,
     val arrivalText: String? = null,
     val arrivalInfo: String? = null,
     val stops: List<JsonElement>? = null,

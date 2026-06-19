@@ -169,11 +169,15 @@ fun StudentMainScreen(
         }
     }
 
-    LaunchedEffect(currentScreen, selectedSchedule.id) {
+    DisposableEffect(currentScreen, selectedSchedule.id) {
         if (currentScreen == StudentScreen.ROUTE_STATUS) {
-            while (true) {
-                studentBusViewModel.loadRouteStatus(selectedSchedule)
-                delay(5_000)
+            studentBusViewModel.startRouteStatusUpdates(selectedSchedule)
+        } else {
+            studentBusViewModel.stopRouteStatusUpdates()
+        }
+        onDispose {
+            if (currentScreen == StudentScreen.ROUTE_STATUS) {
+                studentBusViewModel.stopRouteStatusUpdates()
             }
         }
     }
@@ -294,7 +298,7 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
 
     val currentPassengers = driverViewModel.passengerCount.coerceIn(0, FIXED_TOTAL_SEATS)
     val liveLocation = when (driverViewModel.operationState) {
-        OperationState.BEFORE_DEPARTURE -> "출발 전입니다"
+        OperationState.BEFORE_DEPARTURE -> "운행 전입니다"
         OperationState.OPERATING -> "운행 중입니다"
         OperationState.COMPLETED -> "운행이 종료되었습니다"
     }
@@ -683,7 +687,7 @@ private fun StudentRouteStatusContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}".replace("조회 중", "조회중") else "운행 전",
+                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}".replace("조회 중", "조회중") else routeDetail.statusText,
                     style = ShuttleRegularTextStyle.copy(
                         fontSize = 13.sp,
                         lineHeight = 13.sp,
@@ -1930,9 +1934,9 @@ private fun AdminPassengerControlSection(
     val remainingSeats = (totalSeats - passengers).coerceAtLeast(0)
     val isOperating = operationState == OperationState.OPERATING
     val stateLabel = when (operationState) {
-        OperationState.BEFORE_DEPARTURE -> "출발 전"
+        OperationState.BEFORE_DEPARTURE -> "운행 전"
         OperationState.OPERATING -> "운행 중"
-        OperationState.COMPLETED -> "운행 완료"
+        OperationState.COMPLETED -> "운행 종료"
     }
     val manualSchedules = remember(schedules) {
         schedules

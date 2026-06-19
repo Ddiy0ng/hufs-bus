@@ -18,6 +18,11 @@ import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TermsResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -71,14 +76,48 @@ class ShuttleRepository(
                         dataLines += line.removePrefix("data:").trim()
                     }
                     if (line.isBlank() && dataLines.isNotEmpty()) {
-                        val payload = gson.fromJson(dataLines.joinToString(""), JsonElement::class.java)
-                        return@withContext payload.payloadSingleOrListFirst()?.let { gson.decode<LiveEtaResponse>(it) }
+                        return@withContext dataLines.toLiveEtaOrNull()
                     }
                 }
                 null
             }
         }
     }
+
+    fun subscribeLiveEta(timetableId: Long): Flow<LiveEtaResponse> = flow {
+        val token = TokenStore.accessToken?.takeIf { it.isNotBlank() }
+        val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
+            .toHttpUrl()
+            .newBuilder()
+            .apply { token?.let { addQueryParameter("token", it) } }
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "text/event-stream")
+            .build()
+        val liveClient = RetrofitClient.okHttpClient.newBuilder()
+            .readTimeout(0, TimeUnit.SECONDS)
+            .build()
+
+        liveClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("HTTP ${response.code}")
+            }
+
+            val source = response.body?.source() ?: return@use
+            val dataLines = mutableListOf<String>()
+            while (currentCoroutineContext().isActive) {
+                val line = source.readUtf8Line() ?: break
+                when {
+                    line.startsWith("data:") -> dataLines += line.removePrefix("data:").trim()
+                    line.isBlank() && dataLines.isNotEmpty() -> {
+                        dataLines.toLiveEtaOrNull()?.let { emit(it) }
+                        dataLines.clear()
+                    }
+                }
+            }
+        }
+    }.flowOn(Dispatchers.IO)
 
     suspend fun getBusStatuses(timetableId: Long): Result<BusStatusResponse?> = runCatching {
         val response = runCatching { apiService.getBusStatuses(timetableId) }
@@ -109,6 +148,13 @@ class ShuttleRepository(
                 longitude = longitude
             )
         ).payloadSingleOrListFirst()?.let { gson.decode<DriverLocationResponse>(it) }
+    }
+
+    private fun List<String>.toLiveEtaOrNull(): LiveEtaResponse? {
+        return runCatching {
+            val payload = gson.fromJson(joinToString(""), JsonElement::class.java)
+            payload.payloadSingleOrListFirst()?.let { gson.decode<LiveEtaResponse>(it) }
+        }.getOrNull()
     }
 
     suspend fun getFavorites(): Result<List<FavoriteResponse>> = runCatching {

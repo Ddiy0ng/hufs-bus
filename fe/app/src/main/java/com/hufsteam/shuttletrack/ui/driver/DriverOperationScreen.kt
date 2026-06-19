@@ -576,7 +576,7 @@ private suspend fun readCurrentLocation(context: Context): Location? = withTimeo
         }
 
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
             .filter { provider -> runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false) }
 
         val lastKnownLocation = providers
