@@ -174,6 +174,7 @@ fun BottomNavBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(NavyBlue)
+            .navigationBarsPadding()
             .padding(vertical = 8.dp)
     ) {
         BottomNavItem(Icons.Filled.Schedule, "시간표",   selected == BottomTab.Timetable, { onTabSelected(BottomTab.Timetable) }, Modifier.weight(1f))

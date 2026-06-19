@@ -76,6 +76,26 @@ class StudentBusViewModel(
         }
     }
 
+    fun refreshAll(selectedSchedule: BusSchedule? = null, showLoading: Boolean = true) {
+        viewModelScope.launch {
+            if (showLoading) {
+                uiState = uiState.copy(isLoading = true, errorMessage = null)
+            }
+            val scheduleResult = repository.loadSchedules()
+            val favorites = repository.loadFavorites()
+            val routeDetail = selectedSchedule?.let { repository.loadRouteDetail(it) }
+            uiState = uiState.copy(
+                offCampusSchedules = scheduleResult.offCampusSchedules,
+                onCampusSchedules = scheduleResult.onCampusSchedules,
+                favoriteSchedules = favorites,
+                selectedRouteDetail = routeDetail ?: uiState.selectedRouteDetail,
+                isLoading = false,
+                errorMessage = scheduleResult.errorMessage,
+                usingMockData = scheduleResult.usingMockData
+            )
+        }
+    }
+
     fun loadRouteStatus(schedule: BusSchedule) {
         viewModelScope.launch {
             val detail = repository.loadRouteDetail(schedule)
@@ -85,16 +105,15 @@ class StudentBusViewModel(
 
     fun saveFavorite(schedule: BusSchedule, days: Set<String>) {
         viewModelScope.launch {
-            val saved = repository.saveFavorite(schedule, days)
+            val currentFavorites = repository.loadFavorites()
+            val hadFavorite = currentFavorites.any { it.schedule.id == schedule.id } ||
+                uiState.favoriteSchedules.any { it.schedule.id == schedule.id }
+            val saved = repository.saveFavorite(schedule, days, hadFavorite)
             if (saved) {
                 val refreshedFavorites = repository.loadFavorites()
                 uiState = uiState.copy(
-                    favoriteSchedules = if (refreshedFavorites.isNotEmpty() || days.isEmpty()) {
-                        refreshedFavorites
-                    } else {
-                        uiState.favoriteSchedules
-                            .filterNot { it.schedule.id == schedule.id } + FavoriteSchedule(schedule, days)
-                    }
+                    favoriteSchedules = refreshedFavorites,
+                    errorMessage = null
                 )
             } else {
                 uiState = uiState.copy(errorMessage = "즐겨찾기 설정에 실패했습니다.")
@@ -130,14 +149,17 @@ class StudentBusRepository(
 
         val offSchedules = offResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOffCampusSchedules, "교외") }
+            ?.withNearbySeatStatuses()
             .orEmpty()
         val onSchedules = onResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOnCampusSchedules, "교내") }
+            ?.withNearbySeatStatuses()
             .orEmpty()
         val errorMessage = when {
             offResult.isFailure && onResult.isFailure -> "서버 시간표를 불러오지 못했습니다."
             offResult.isFailure -> "교외 시간표를 불러오지 못했습니다."
             onResult.isFailure -> "교내 시간표를 불러오지 못했습니다."
+            offSchedules.isEmpty() && onSchedules.isEmpty() -> "서버 시간표 데이터가 비어 있습니다. 관리자 시간표 업로드 또는 서버 DB 반영 후 새로고침해 주세요."
             else -> null
         }
 
@@ -155,7 +177,7 @@ class StudentBusRepository(
             .orEmpty()
 
         return favorites
-            .groupBy { it.schedule.id }
+            .groupBy { it.favoriteGroupKey() }
             .map { (_, items) ->
                 val first = items.first()
                 first.copy(days = items.flatMap { it.days }.toSet())
@@ -175,10 +197,11 @@ class StudentBusRepository(
         return routeDetailFromApi(schedule, liveEta, busStatus)
     }
 
-    suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>): Boolean {
-        return shuttleRepository.addFavorite(
-            specificTimetableId = schedule.id.toLong(),
-            days = days.map(::toApiDay).toSet()
+    suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>, isExisting: Boolean): Boolean {
+        return shuttleRepository.saveFavorite(
+            timetableId = schedule.id.toLong(),
+            days = days.map(::toApiDay).toSet(),
+            isExisting = isExisting
         ).isSuccess
     }
 
@@ -202,8 +225,11 @@ class StudentBusRepository(
             ?: fallbackSchedule?.remainingSeats
             ?: FIXED_TOTAL_SEATS
 
+        val resolvedTimetableId = firstLong(timetableId, specificTimetableId, id)
+
         return BusSchedule(
-            id = firstLong(specificTimetableId, timetableId, id)?.toInt() ?: fallbackSchedule?.id ?: index + 1,
+            id = resolvedTimetableId?.toInt() ?: fallbackSchedule?.id ?: index + 1,
+            timetableId = resolvedTimetableId,
             routeName = firstText(routeName, route, fallbackRoute),
             departureTime = firstText(departureTime, departAt, time, plannedDeparture, fallbackSchedule?.departureTime, "00:00"),
             remainingSeats = seatLeft.coerceIn(0, FIXED_TOTAL_SEATS),
@@ -211,6 +237,34 @@ class StudentBusRepository(
             currentLocation = firstText(currentLocation, currentStop, "운행 전"),
             routeStops = routeStops.ifEmpty { fallbackSchedule?.routeStops.orEmpty() },
             campusType = resolveCampusType(inOutCampus, routeName, route, fallbackRoute, defaultCampusType)
+        )
+    }
+
+    private suspend fun List<BusSchedule>.withNearbySeatStatuses(maxItems: Int = 24): List<BusSchedule> {
+        val targetIds = sortedBy { it.departureTime.distanceFromNowMinutes() }
+            .take(maxItems)
+            .map { it.id }
+            .toSet()
+        return map { schedule ->
+            if (schedule.id in targetIds) schedule.withLatestSeatStatus() else schedule
+        }
+    }
+
+    private suspend fun BusSchedule.withLatestSeatStatus(): BusSchedule {
+        val busStatus = shuttleRepository.getBusStatuses(id.toLong()).getOrNull() ?: return this
+        val total = busStatus.totalSeats ?: totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+        val remaining = firstInt(busStatus.remainingSeats, busStatus.availableSeats)
+            ?: firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
+                ?.let { (total - it).coerceIn(0, total) }
+            ?: remainingSeats.coerceIn(0, total)
+        val locationText = busStatus.currentStopName
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "현재 위치 | $it" }
+            ?: currentLocation
+        return copy(
+            totalSeats = total,
+            remainingSeats = remaining,
+            currentLocation = locationText
         )
     }
 
@@ -251,14 +305,25 @@ class StudentBusRepository(
         liveEta: LiveEtaResponse?,
         busStatus: BusStatusResponse?
     ): RouteDetail {
-        val hasLiveBus = busStatus?.status?.trim()?.uppercase() == "RUNNING" && liveEta != null
+        val statusIsRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
+        val hasTrackedStop = busStatus?.currentStopSequence != null || !busStatus?.currentStopName.isNullOrBlank()
+        val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop)
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
         val fallbackStops = schedule.routeStops.ifEmpty { mockRouteDetailFor(schedule).stops }
         val stopPoints = apiStopPoints.ifEmpty { fallbackStops.map { RouteStopPoint(it, null, null) } }
         val stops = stopPoints.map { it.name }
+        val currentStopNameIndex = busStatus?.currentStopName?.let { currentStop ->
+            stops.indexOfFirst { it.cleanStopName() == currentStop.cleanStopName() }
+        }?.takeIf { it >= 0 }
 
         val currentIndex = if (hasLiveBus) {
-            firstInt(liveEta?.currentStopIndex, liveEta?.busStopIndex, liveEta?.currentIndex) ?: 0
+            firstInt(
+                liveEta?.currentStopIndex,
+                liveEta?.busStopIndex,
+                liveEta?.currentIndex,
+                busStatus?.currentStopSequence?.minus(1),
+                currentStopNameIndex
+            ) ?: 0
         } else {
             0
         }
@@ -289,10 +354,15 @@ class StudentBusRepository(
             0f
         }
 
-        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats, busStatus?.currentSeats, liveEta?.currentSeats)
-            ?: busStatus?.currentPassengers?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
-            ?: busStatus?.passengerCount?.let { (FIXED_TOTAL_SEATS - it).coerceIn(0, FIXED_TOTAL_SEATS) }
-            ?: schedule.remainingSeats
+        val totalSeats = busStatus?.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats)
+            ?: firstInt(
+                busStatus?.currentSeats,
+                busStatus?.currentPassengers,
+                busStatus?.passengerCount,
+                liveEta?.currentSeats
+            )?.let { (totalSeats - it).coerceIn(0, totalSeats) }
+            ?: schedule.remainingSeats.coerceIn(0, totalSeats)
         val eta = if (hasLiveBus) {
             liveEta?.etaText
                 ?: liveEta?.estimatedMinutes?.let { "${it.toString().padStart(2, '0')}분" }
@@ -413,6 +483,17 @@ class StudentBusRepository(
         return values.firstOrNull { it != null }
     }
 
+    private fun String.distanceFromNowMinutes(): Int {
+        val parts = take(5).split(":")
+        val hour = parts.getOrNull(0)?.toIntOrNull() ?: return Int.MAX_VALUE
+        val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+        val scheduled = hour * 60 + minute
+        val calendar = java.util.Calendar.getInstance()
+        val now = calendar.get(java.util.Calendar.HOUR_OF_DAY) * 60 + calendar.get(java.util.Calendar.MINUTE)
+        val direct = kotlin.math.abs(scheduled - now)
+        return minOf(direct, 24 * 60 - direct)
+    }
+
     private fun String.cleanStopName(): String {
         return replace("\n", " ").replace("(기점)", "").replace("(종점)", "").trim()
     }
@@ -438,6 +519,15 @@ class StudentBusRepository(
             "금", "금요일", "FRI", "FRIDAY" -> "FRI"
             else -> day.trim()
         }
+    }
+
+    private fun FavoriteSchedule.favoriteGroupKey(): String {
+        return listOf(
+            schedule.id.toString(),
+            schedule.campusType,
+            schedule.routeName,
+            schedule.departureTime
+        ).joinToString("|")
     }
 
     private fun resolveCampusType(vararg values: String?): String {
@@ -541,6 +631,7 @@ private fun mockSchedulesFromGroups(startId: Int, campusType: String, vararg gro
         group.times.mapIndexed { index, time ->
             BusSchedule(
                 id = nextId++,
+                timetableId = null,
                 routeName = group.routeName,
                 departureTime = time,
                 remainingSeats = mockRemainingSeats(index),

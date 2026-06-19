@@ -111,6 +111,11 @@ class AuthRepository(
     fun logout() {
         TokenStore.clear()
     }
+
+    suspend fun withdraw(): Result<Unit> = runCatching {
+        callOrThrowServerMessage { apiService.withdrawUser() }
+        TokenStore.clear()
+    }
 }
 
 private suspend fun callOrThrowServerMessage(block: suspend () -> JsonElement): JsonElement {

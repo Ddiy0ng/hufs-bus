@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,8 +35,10 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.ui.theme.NavyBlue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 private val DriverAccentRed = Color(0xFFB83A25)
@@ -58,15 +62,66 @@ fun DriverOperationScreen(
     val lastGpsText = driverViewModel.lastGpsText
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    var refreshDragDistance by remember { mutableStateOf(0f) }
+    var isManualRefreshing by remember { mutableStateOf(false) }
+
+    fun refreshDriverOperation() {
+        if (isManualRefreshing) return
+        scope.launch {
+            isManualRefreshing = true
+            if (driverViewModel.operationState == OperationState.OPERATING) {
+                driverViewModel.updateOperationMessage("운행 상태를 새로고침 중입니다")
+                driverViewModel.refreshPassengerStateFromServer(showMessage = false)
+                val location = readCurrentLocation(context)
+                if (location != null) {
+                    driverViewModel.sendCurrentLocation(
+                        latitude = location.latitude,
+                        longitude = location.longitude
+                    )
+                } else {
+                    driverViewModel.updateOperationMessage("현재 GPS 위치를 가져오지 못했습니다. 위치 권한과 GPS 설정을 확인해 주세요")
+                }
+            } else {
+                driverViewModel.updateOperationMessage("운행 전입니다. 출발 등록 후 GPS를 새로고침할 수 있습니다")
+            }
+            delay(600)
+            isManualRefreshing = false
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                 permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
         if (granted) {
+            driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
             scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
         } else {
-            driverViewModel.setGpsStartError("위치 권한이 필요합니다")
+            driverViewModel.setGpsStartError("위치 권한이 필요합니다. 앱 설정에서 위치 권한을 허용해 주세요")
+        }
+    }
+
+    LaunchedEffect(state, isGpsTracking, route.id) {
+        if (state == OperationState.OPERATING && isGpsTracking) {
+            while (true) {
+                delay(10_000)
+                val location = readCurrentLocation(context)
+                if (location != null) {
+                    driverViewModel.sendCurrentLocation(
+                        latitude = location.latitude,
+                        longitude = location.longitude
+                    )
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(state, route.id) {
+        if (state == OperationState.OPERATING) {
+            while (true) {
+                driverViewModel.refreshPassengerStateFromServer(showMessage = false)
+                delay(5_000)
+            }
         }
     }
 
@@ -74,6 +129,18 @@ fun DriverOperationScreen(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .pointerInput(state, isManualRefreshing) {
+                detectVerticalDragGestures(
+                    onVerticalDrag = { _, dragAmount ->
+                        if (dragAmount > 0) refreshDragDistance += dragAmount
+                    },
+                    onDragEnd = {
+                        if (refreshDragDistance > 80f) refreshDriverOperation()
+                        refreshDragDistance = 0f
+                    },
+                    onDragCancel = { refreshDragDistance = 0f }
+                )
+            }
             .background(Color.White)
     ) {
         // ── 상단 헤더 ──────────────────────────────────────────
@@ -190,9 +257,11 @@ fun DriverOperationScreen(
                         text    = "출발 등록하기",
                         enabled = true,
                         onClick = {
+                            driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
                             if (hasLocationPermission(context)) {
                                 scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
                             } else {
+                                driverViewModel.updateOperationMessage("위치 권한을 요청했습니다")
                                 permissionLauncher.launch(
                                     arrayOf(
                                         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -471,9 +540,18 @@ private suspend fun startOperationWithCurrentLocation(
     context: Context,
     driverViewModel: DriverViewModel
 ) {
+    driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
+    if (!hasLocationPermission(context)) {
+        driverViewModel.setGpsStartError("위치 권한이 필요합니다. 앱 설정에서 위치 권한을 허용해 주세요")
+        return
+    }
+    if (!hasEnabledLocationProvider(context)) {
+        driverViewModel.setGpsStartError("휴대폰 위치 서비스가 꺼져 있습니다. 위치를 켠 뒤 다시 눌러주세요")
+        return
+    }
     val location = readCurrentLocation(context)
     if (location == null) {
-        driverViewModel.setGpsStartError("현재 GPS 위치를 확인할 수 없습니다")
+        driverViewModel.setGpsStartError("현재 GPS 위치를 확인할 수 없습니다. 실외나 창가에서 다시 시도해 주세요")
         return
     }
     driverViewModel.startOperation(
@@ -482,53 +560,62 @@ private suspend fun startOperationWithCurrentLocation(
     )
 }
 
-@SuppressLint("MissingPermission")
-private suspend fun readCurrentLocation(context: Context): Location? = suspendCancellableCoroutine { cont ->
-    if (!hasLocationPermission(context)) {
-        cont.resume(null)
-        return@suspendCancellableCoroutine
-    }
-
+private fun hasEnabledLocationProvider(context: Context): Boolean {
     val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-    val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-        .filter { provider -> runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false) }
-
-    val lastKnownLocation = providers
-        .mapNotNull { provider -> runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull() }
-        .maxByOrNull { it.time }
-
-    if (lastKnownLocation != null && System.currentTimeMillis() - lastKnownLocation.time < 30_000L) {
-        cont.resume(lastKnownLocation)
-        return@suspendCancellableCoroutine
+    return listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).any { provider ->
+        runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false)
     }
+}
 
-    val provider = providers.firstOrNull()
-    if (provider == null) {
-        cont.resume(lastKnownLocation)
-        return@suspendCancellableCoroutine
-    }
-
-    val listener = object : LocationListener {
-        override fun onLocationChanged(location: Location) {
-            if (cont.isActive) cont.resume(location)
-            locationManager.removeUpdates(this)
+@SuppressLint("MissingPermission")
+private suspend fun readCurrentLocation(context: Context): Location? = withTimeoutOrNull(8_000L) {
+    suspendCancellableCoroutine { cont ->
+        if (!hasLocationPermission(context)) {
+            cont.resume(null)
+            return@suspendCancellableCoroutine
         }
 
-        @Deprecated("Deprecated in Android API")
-        override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        val providers = listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)
+            .filter { provider -> runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false) }
 
-        override fun onProviderEnabled(provider: String) = Unit
+        val lastKnownLocation = providers
+            .mapNotNull { provider -> runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull() }
+            .maxByOrNull { it.time }
 
-        override fun onProviderDisabled(provider: String) = Unit
-    }
+        if (lastKnownLocation != null && System.currentTimeMillis() - lastKnownLocation.time < 10 * 60_000L) {
+            cont.resume(lastKnownLocation)
+            return@suspendCancellableCoroutine
+        }
 
-    runCatching {
-        locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
-    }.onFailure {
-        if (cont.isActive) cont.resume(lastKnownLocation)
-    }
+        val provider = providers.firstOrNull()
+        if (provider == null) {
+            cont.resume(lastKnownLocation)
+            return@suspendCancellableCoroutine
+        }
 
-    cont.invokeOnCancellation {
-        locationManager.removeUpdates(listener)
+        val listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                if (cont.isActive) cont.resume(location)
+                locationManager.removeUpdates(this)
+            }
+
+            @Deprecated("Deprecated in Android API")
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+
+            override fun onProviderEnabled(provider: String) = Unit
+
+            override fun onProviderDisabled(provider: String) = Unit
+        }
+
+        runCatching {
+            locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+        }.onFailure {
+            if (cont.isActive) cont.resume(lastKnownLocation)
+        }
+
+        cont.invokeOnCancellation {
+            locationManager.removeUpdates(listener)
+        }
     }
 }

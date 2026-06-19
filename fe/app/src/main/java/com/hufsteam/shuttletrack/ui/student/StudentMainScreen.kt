@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -13,10 +14,12 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.Modifier
@@ -46,12 +50,14 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -81,6 +87,7 @@ private enum class StudentTab    { TIMETABLE, FAVORITES, MYPAGE }
 // ── 데이터 모델 ─────────────────────────────────────────────────
 data class BusSchedule(
     val id: Int,
+    val timetableId: Long? = null,
     val routeName: String,
     val departureTime: String,
     val remainingSeats: Int,
@@ -153,8 +160,7 @@ fun StudentMainScreen(
     var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.firstOrNull() ?: offCampusSchedules.first()) }
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
     val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
-    val liveRouteDetail = (studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule))
-        .withSeatText(liveSelectedSchedule)
+    val liveRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule).withSeatText(liveSelectedSchedule)
 
     LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
@@ -172,11 +178,21 @@ fun StudentMainScreen(
         }
     }
 
+    BackHandler(enabled = currentScreen != StudentScreen.TIMETABLE || selectedTab != StudentTab.TIMETABLE) {
+        currentScreen = StudentScreen.TIMETABLE
+        selectedTab = StudentTab.TIMETABLE
+    }
+
     Scaffold(
         bottomBar = {
             StudentBottomBar(
                 selected = selectedTab,
                 onTabClick = { tab ->
+                    when (tab) {
+                        StudentTab.TIMETABLE -> studentBusViewModel.refreshAll()
+                        StudentTab.FAVORITES -> studentBusViewModel.refreshAll()
+                        StudentTab.MYPAGE -> Unit
+                    }
                     selectedTab = tab
                     currentScreen = when (tab) {
                         StudentTab.TIMETABLE -> StudentScreen.TIMETABLE
@@ -194,6 +210,7 @@ fun StudentMainScreen(
                     onCampusSchedules = liveOnCampusSchedules,
                     isLoading = studentUiState.isLoading,
                     errorMessage = studentUiState.errorMessage,
+                    onRefresh = { studentBusViewModel.refreshAll() },
                     onScheduleClick = {
                         if (viewModel.userRole == UserRole.DRIVER) {
                             onGoDriverOperation(it.toDriverRoute())
@@ -209,6 +226,9 @@ fun StudentMainScreen(
                     schedule = liveSelectedSchedule,
                     routeDetail = liveRouteDetail,
                     isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
+                    onRefresh = {
+                        studentBusViewModel.refreshAll(selectedSchedule)
+                    },
                     onBackClick = {
                         currentScreen = StudentScreen.TIMETABLE
                         selectedTab = StudentTab.TIMETABLE
@@ -218,6 +238,7 @@ fun StudentMainScreen(
 
                 StudentScreen.FAVORITES -> StudentFavoritesContent(
                     favorites = favoriteSchedules,
+                    onRefresh = { studentBusViewModel.refreshAll() },
                     onScheduleClick = {
                         selectedSchedule = it.schedule
                         studentBusViewModel.loadRouteStatus(it.schedule)
@@ -239,7 +260,8 @@ fun StudentMainScreen(
                     onGoAdminStopManagement = onGoAdminStopManagement,
                     onGoAdminTimetableManagement = onGoAdminTimetableManagement,
                     driverViewModel = driverViewModel,
-                    schedules = liveOffCampusSchedules + liveOnCampusSchedules
+                    schedules = liveOffCampusSchedules + liveOnCampusSchedules,
+                    onRefreshSchedules = { studentBusViewModel.refreshAll() }
                 )
             }
 
@@ -293,7 +315,7 @@ private fun BusSchedule.toDriverRoute(): DriverRoute {
         scheduledTime = departureTime,
         totalSeats = totalSeats,
         stops = stops,
-        busId = id.toLong()
+        timetableId = timetableId ?: id.toLong()
     )
 }
 
@@ -305,6 +327,83 @@ private fun RouteDetail.withSeatText(schedule: BusSchedule): RouteDetail {
     )
 }
 
+@Composable
+private fun PullToRefreshContainer(
+    modifier: Modifier = Modifier,
+    isRefreshing: Boolean = false,
+    onRefresh: () -> Unit,
+    content: @Composable BoxScope.() -> Unit
+) {
+    var pullDistance by remember { mutableStateOf(0f) }
+    var gestureRefreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val refreshing = isRefreshing || gestureRefreshing
+
+    Box(
+        modifier = modifier.pointerInput(refreshing) {
+            detectVerticalDragGestures(
+                onVerticalDrag = { change, dragAmount ->
+                    if (dragAmount > 0f) {
+                        pullDistance = (pullDistance + dragAmount).coerceAtMost(240f)
+                        change.consume()
+                    }
+                },
+                onDragCancel = {
+                    pullDistance = 0f
+                },
+                onDragEnd = {
+                    if (pullDistance >= 120f && !refreshing) {
+                        gestureRefreshing = true
+                        onRefresh()
+                        scope.launch {
+                            delay(900)
+                            gestureRefreshing = false
+                        }
+                    }
+                    pullDistance = 0f
+                }
+            )
+        }
+    ) {
+        content()
+        AnimatedVisibility(
+            visible = refreshing || pullDistance > 36f,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset(y = ((pullDistance / 7f).coerceIn(0f, 30f)).dp)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(50.dp),
+                color = Color.White,
+                shadowElevation = 4.dp,
+                border = BorderStroke(1.dp, Color(0xFFE0E4EA))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (refreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = NavyBlue,
+                            strokeWidth = 2.dp
+                        )
+                    }
+                    Text(
+                        if (refreshing) "새로고침 중" else "놓으면 새로고침",
+                        fontSize = 12.sp,
+                        color = NavyBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
 // ── 시간표 화면 ─────────────────────────────────────────────────
 @Composable
 private fun StudentTimetableContent(
@@ -312,19 +411,25 @@ private fun StudentTimetableContent(
     onCampusSchedules: List<BusSchedule>,
     isLoading: Boolean,
     errorMessage: String?,
+    onRefresh: () -> Unit,
     onScheduleClick: (BusSchedule) -> Unit
 ) {
-    var selectedCampus by remember { mutableStateOf(0) }
+    var selectedCampus by rememberSaveable { mutableStateOf(0) }
     val schedules = if (selectedCampus == 0) onCampusSchedules else offCampusSchedules
-    val routes = schedules.map { it.routeName }.distinct().ifEmpty { if (selectedCampus == 0) onCampusRoutes else offCampusRoutes }
-    var selectedRoute by remember(selectedCampus, routes) { mutableStateOf(routes.firstOrNull().orEmpty()) }
+    val routes = schedules.map { it.routeName }.distinct()
+    var selectedRoute by rememberSaveable { mutableStateOf("") }
     var dropdownOpen by remember { mutableStateOf(false) }
-    var selectedHour by remember { mutableStateOf(if (selectedCampus == 0) 9 else 8) }
+    var selectedHour by rememberSaveable { mutableStateOf(9) }
 
     LaunchedEffect(selectedCampus, routes) {
         if (selectedRoute !in routes) selectedRoute = routes.firstOrNull().orEmpty()
     }
 
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        isRefreshing = isLoading,
+        onRefresh = onRefresh
+    ) {
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
         TabRow(
             selectedTabIndex = selectedCampus,
@@ -407,7 +512,7 @@ private fun StudentTimetableContent(
                 .mapNotNull { it.departureTime.substringBefore(":").toIntOrNull() }
                 .distinct()
                 .sorted()
-            val visibleHours = routeHours.ifEmpty { hours }
+            val visibleHours = routeHours.ifEmpty { if (schedules.isEmpty()) emptyList() else hours }
 
             LaunchedEffect(selectedRoute, selectedCampus, routeHours) {
                 if (routeHours.isNotEmpty() && selectedHour !in routeHours) {
@@ -415,23 +520,25 @@ private fun StudentTimetableContent(
                 }
             }
 
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(visibleHours) { hour ->
-                    val isSelected = hour == selectedHour
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .background(if (isSelected) NavyBlue else Color(0xFFF1F3F6))
-                            .clickable { selectedHour = hour }
-                            .padding(horizontal = 14.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "${hour.toString().padStart(2, '0')}시",
-                            fontSize = 13.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) Color.White else Color(0xFF555555)
-                        )
+            if (visibleHours.isNotEmpty()) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(visibleHours) { hour ->
+                        val isSelected = hour == selectedHour
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(if (isSelected) NavyBlue else Color(0xFFF1F3F6))
+                                .clickable { selectedHour = hour }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "${hour.toString().padStart(2, '0')}시",
+                                fontSize = 13.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color(0xFF555555)
+                            )
+                        }
                     }
                 }
             }
@@ -451,6 +558,7 @@ private fun StudentTimetableContent(
                 }
             }
         }
+    }
     }
 }
 
@@ -497,6 +605,7 @@ private fun StudentRouteStatusContent(
     schedule: BusSchedule,
     routeDetail: RouteDetail,
     isFavorite: Boolean,
+    onRefresh: () -> Unit,
     onBackClick: () -> Unit,
     onFavoriteClick: () -> Unit
 ) {
@@ -507,6 +616,10 @@ private fun StudentRouteStatusContent(
         mutableStateOf<Int?>(null)
     }
 
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        onRefresh = onRefresh
+    ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -560,19 +673,25 @@ private fun StudentRouteStatusContent(
 
             Box(
                 modifier = Modifier
-                    .offset(x = 139.dp, y = 174.dp)
-                    .width(95.dp)
+                    .offset(x = 122.dp, y = 174.dp)
+                    .width(129.dp)
                     .height(31.dp)
                     .clip(RoundedCornerShape(50.dp))
                     .border(3.dp, if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFFD8DEE8), RoundedCornerShape(50.dp))
                     .background(Color.White)
-                    .padding(horizontal = 12.dp),
+                    .padding(horizontal = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}" else "운행 전",
-                    style = ShuttleRegularTextStyle,
-                    color = if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFF999999)
+                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}".replace("조회 중", "조회중") else "운행 전",
+                    style = ShuttleRegularTextStyle.copy(
+                        fontSize = 13.sp,
+                        lineHeight = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = if (routeDetail.isRunning) Color(0xFFE2573B) else Color(0xFF999999),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -591,7 +710,7 @@ private fun StudentRouteStatusContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("출발 계획 | ${routeDetail.plannedDeparture}", style = ShuttleRegularTextStyle, color = Color(0xFF333333))
-                Text("실제 출발 | ${routeDetail.actualDeparture}", style = ShuttleRegularTextStyle, color = Color(0xFF333333))
+                Text("실제 출발 | ${routeDetail.actualDeparture.toDisplayClockText()}", style = ShuttleRegularTextStyle, color = Color(0xFF333333))
             }
 
             Box(
@@ -628,6 +747,7 @@ private fun StudentRouteStatusContent(
                 }
             }
         }
+    }
     }
 }
 @Composable
@@ -961,6 +1081,7 @@ private fun CurvedRouteProgressBar(stops: List<String>, currentStopIndex: Int) {
 @Composable
 private fun StudentFavoritesContent(
     favorites: List<FavoriteSchedule>,
+    onRefresh: () -> Unit,
     onScheduleClick: (FavoriteSchedule) -> Unit,
     onFavoriteEditClick: (FavoriteSchedule) -> Unit
 ) {
@@ -972,6 +1093,10 @@ private fun StudentFavoritesContent(
         favorite.schedule.campusType == selectedCampus && selectedDay in favorite.days
     }
 
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        onRefresh = onRefresh
+    ) {
     Column(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Box(
             modifier = Modifier
@@ -1049,9 +1174,12 @@ private fun StudentFavoritesContent(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 20.dp)
                 ) {
-                    items(visibleFavorites) { favorite ->
+                    items(
+                        items = visibleFavorites,
+                        key = { favorite -> "${favorite.schedule.id}-${favorite.schedule.routeName}-${favorite.schedule.departureTime}" }
+                    ) { favorite ->
                         Card(
-                            modifier = Modifier.fillMaxWidth().clickable { onScheduleClick(favorite) },
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -1060,7 +1188,12 @@ private fun StudentFavoritesContent(
                                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onScheduleClick(favorite) }
+                                ) {
                                     Text(
                                         favorite.schedule.routeName,
                                         fontSize = 13.sp,
@@ -1111,6 +1244,7 @@ private fun StudentFavoritesContent(
             }
         }
     }
+    }
 }
 
 @Composable
@@ -1155,6 +1289,7 @@ private fun FavoriteDaySheet(
     onSave: (Set<String>) -> Unit
 ) {
     var selectedDays by remember(schedule.id) { mutableStateOf(initialDays) }
+    var isSubmitting by remember(schedule.id) { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
@@ -1168,10 +1303,28 @@ private fun FavoriteDaySheet(
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 18.dp)
         ) {
-            Text("알림 받을 요일을 선택해 주세요", style = ShuttleRegularTextStyle, color = Color.Black)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("알림 받을 요일을 선택해 주세요", style = ShuttleRegularTextStyle, color = Color.Black)
+                    Spacer(Modifier.height(6.dp))
+                    Text("중복 선택 가능", style = ShuttleRegularTextStyle, color = Color(0xFFB8BEC8))
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = "닫기",
+                        tint = Color(0xFF9AA1AB)
+                    )
+                }
+            }
             Spacer(Modifier.height(6.dp))
-            Text("중복 선택 가능", style = ShuttleRegularTextStyle, color = Color(0xFFB8BEC8))
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(8.dp))
 
             notificationDays.forEach { day ->
                 Row(
@@ -1198,14 +1351,32 @@ private fun FavoriteDaySheet(
 
             Spacer(Modifier.height(4.dp))
             Button(
-                onClick = { onSave(selectedDays) },
+                onClick = {
+                    if (!isSubmitting) {
+                        isSubmitting = true
+                        onSave(selectedDays)
+                        onDismiss()
+                    }
+                },
+                enabled = !isSubmitting,
                 modifier = Modifier.fillMaxWidth().height(48.dp),
                 shape = RoundedCornerShape(8.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = NavyBlue
+                    containerColor = NavyBlue,
+                    disabledContainerColor = Color(0xFF9FB0C4)
                 )
             ) {
-                Text(if (selectedDays.isEmpty()) "즐겨찾기 해제하기" else "설정하기", style = ShuttleRegularTextStyle, color = Color.White)
+                if (isSubmitting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = Color.White
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("저장 중", style = ShuttleRegularTextStyle, color = Color.White)
+                } else {
+                    Text(if (selectedDays.isEmpty()) "즐겨찾기 해제하기" else "설정하기", style = ShuttleRegularTextStyle, color = Color.White)
+                }
             }
         }
     }
@@ -1223,7 +1394,8 @@ private fun StudentMyPageContent(
     onGoAdminStopManagement: () -> Unit,
     onGoAdminTimetableManagement: () -> Unit,
     driverViewModel: DriverViewModel,
-    schedules: List<BusSchedule>
+    schedules: List<BusSchedule>,
+    onRefreshSchedules: () -> Unit
 ) {
     val role = viewModel.userRole ?: UserRole.STUDENT
     val roleLabel = when (role) {
@@ -1251,6 +1423,12 @@ private fun StudentMyPageContent(
     var serviceTermsPdfFile by remember { mutableStateOf<AdminUploadFile?>(null) }
     var serviceTermsPdfUploaded by remember { mutableStateOf(false) }
     var noticeMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(viewModel.errorMessage) {
+        viewModel.errorMessage?.let { message ->
+            noticeMessage = message
+            viewModel.clearErrors()
+        }
+    }
     val timetableFilePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         persistReadPermission(context, uri)
@@ -1285,6 +1463,22 @@ private fun StudentMyPageContent(
         }
     }
 
+    var isPageRefreshing by remember { mutableStateOf(false) }
+    fun refreshMyPage() {
+        if (isPageRefreshing) return
+        scope.launch {
+            isPageRefreshing = true
+            onRefreshSchedules()
+            delay(700)
+            isPageRefreshing = false
+        }
+    }
+
+    PullToRefreshContainer(
+        modifier = Modifier.fillMaxSize(),
+        isRefreshing = isPageRefreshing,
+        onRefresh = { refreshMyPage() }
+    ) {
     Box(modifier = Modifier.fillMaxSize().background(Color.White)) {
         Column(modifier = Modifier.fillMaxSize()) {
             MyPageProfileHeader(
@@ -1345,6 +1539,7 @@ private fun StudentMyPageContent(
                                         )
                                         adminUploaded = success
                                         noticeMessage = if (success) {
+                                            onRefreshSchedules()
                                             "버스 시간표가 업로드되었습니다"
                                         } else {
                                             "시간표 업로드에 실패했습니다. 서버 상태를 확인해 주세요"
@@ -1459,7 +1654,8 @@ private fun StudentMyPageContent(
                 MyPageSectionHeader("계정 설정")
                 MyPageRow("로그아웃", onClick = onLogout)
                 MyPageRow("탈퇴하기") {
-                    noticeMessage = "회원 탈퇴는 계정 삭제 API 연동 후 활성화됩니다"
+                    noticeMessage = "회원 탈퇴를 처리 중입니다"
+                    viewModel.withdraw(onSuccess = onLogout)
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -1472,6 +1668,7 @@ private fun StudentMyPageContent(
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
+    }
     }
 }
 
@@ -1725,6 +1922,7 @@ private fun AdminPassengerControlSection(
     val scope = rememberCoroutineScope()
     val shuttleRepository = remember { ShuttleRepository() }
     var isRefreshingOperation by remember { mutableStateOf(false) }
+    var manualSelectionMode by remember { mutableStateOf(false) }
     val route = driverViewModel.selectedRoute
     val operationState = driverViewModel.operationState
     val passengers = driverViewModel.passengerCount
@@ -1736,6 +1934,28 @@ private fun AdminPassengerControlSection(
         OperationState.OPERATING -> "운행 중"
         OperationState.COMPLETED -> "운행 완료"
     }
+    val manualSchedules = remember(schedules) {
+        schedules
+            .distinctBy { it.id }
+            .sortedWith(compareBy<BusSchedule>({ it.campusType }, { it.routeName }, { it.departureTime }))
+    }
+    val manualHours = remember(manualSchedules) {
+        manualSchedules
+            .mapNotNull { it.departureHourOrNull() }
+            .distinct()
+            .sorted()
+    }
+    var manualHour by rememberSaveable { mutableStateOf<Int?>(null) }
+    LaunchedEffect(manualHours) {
+        if (manualHour == null || manualHours.none { it == manualHour }) {
+            manualHour = manualHours.closestToCurrentHourOrNull()
+        }
+    }
+    val manualCandidates = remember(manualSchedules, manualHour) {
+        manualSchedules
+            .filter { it.departureHourOrNull() == manualHour }
+            .sortedWith(compareBy<BusSchedule>({ it.departureTime }, { it.routeName }))
+    }
 
     fun refreshRunningOperation(showNotice: Boolean) {
         if (isRefreshingOperation) return
@@ -1745,6 +1965,7 @@ private fun AdminPassengerControlSection(
                 .onSuccess { snapshot ->
                     if (snapshot != null) {
                         driverViewModel.syncRunningRouteFromServer(snapshot.route, snapshot.passengers)
+                        manualSelectionMode = false
                         if (showNotice) {
                             onNotice("운행 중인 시간표를 불러왔습니다")
                         }
@@ -1761,8 +1982,26 @@ private fun AdminPassengerControlSection(
         }
     }
 
-    LaunchedEffect(schedules, route?.id, operationState) {
-        if (route == null || operationState != OperationState.OPERATING) {
+    fun selectManualSchedule(schedule: BusSchedule) {
+        scope.launch {
+            buildAdminOperationSnapshot(schedule, shuttleRepository, requireRunning = false)
+                .onSuccess { snapshot ->
+                    if (snapshot != null) {
+                        driverViewModel.syncRunningRouteFromServer(snapshot.route, snapshot.passengers)
+                        manualSelectionMode = false
+                        onNotice("선택한 시간표로 수기 집계를 시작합니다")
+                    } else {
+                        onNotice("시간표 상태를 불러오지 못했습니다")
+                    }
+                }
+                .onFailure { throwable ->
+                    onNotice("시간표 선택 실패: ${throwable.message ?: "서버 응답 확인 필요"}")
+                }
+        }
+    }
+
+    LaunchedEffect(schedules, route?.id, operationState, manualSelectionMode) {
+        if (!manualSelectionMode && (route == null || operationState != OperationState.OPERATING)) {
             refreshRunningOperation(showNotice = false)
         }
     }
@@ -1795,6 +2034,62 @@ private fun AdminPassengerControlSection(
             fontSize = 12.sp,
             color = Color(0xFF999999)
         )
+        Spacer(Modifier.height(14.dp))
+        Text(
+            "자동 조회가 안 되면 아래에서 운행 시간표를 직접 선택해 수기 집계를 시작할 수 있습니다.",
+            fontSize = 12.sp,
+            color = Color(0xFF777777)
+        )
+        Spacer(Modifier.height(8.dp))
+        if (manualSchedules.isEmpty()) {
+            Text(
+                "등록된 시간표가 없습니다. 관리자 시간표 등록 후 다시 새로고침해 주세요.",
+                fontSize = 12.sp,
+                color = Color(0xFF999999)
+            )
+        } else {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(manualHours) { hour ->
+                    FilterChip(
+                        selected = manualHour == hour,
+                        onClick = { manualHour = hour },
+                        label = {
+                            Text(
+                                "${hour.toString().padStart(2, '0')}시",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        shape = RoundedCornerShape(18.dp),
+                        border = null,
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = NavyBlue,
+                            selectedLabelColor = Color.White,
+                            containerColor = Color(0xFFF2F4F7),
+                            labelColor = Color(0xFF777777)
+                        )
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            if (manualCandidates.isEmpty()) {
+                Text(
+                    "선택한 시간대에 등록된 운행이 없습니다.",
+                    fontSize = 12.sp,
+                    color = Color(0xFF999999)
+                )
+            }
+            manualCandidates.take(12).forEach { schedule ->
+                AdminRouteSelectRow(
+                    route = schedule.toDriverRoute(),
+                    onClick = { selectManualSchedule(schedule) }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+        }
         return
     }
 
@@ -1877,12 +2172,24 @@ private fun AdminPassengerControlSection(
             Spacer(Modifier.height(12.dp))
             AdminPassengerButton(
                 text = if (isRefreshingOperation) "조회 중" else "운행 상태 새로고침",
-                enabled = !isOperating,
+                enabled = !isRefreshingOperation,
                 filled = false,
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {
                     driverViewModel.clearSelectedRoute()
                     refreshRunningOperation(showNotice = true)
+                }
+            )
+            Spacer(Modifier.height(8.dp))
+            AdminPassengerButton(
+                text = "시간표 직접 다시 선택",
+                enabled = true,
+                filled = false,
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    manualSelectionMode = true
+                    driverViewModel.clearSelectedRoute()
+                    onNotice("아래 시간표에서 집계 대상을 직접 선택해 주세요")
                 }
             )
             Spacer(Modifier.height(8.dp))
@@ -1912,32 +2219,66 @@ private suspend fun findRunningAdminOperation(
     schedules: List<BusSchedule>,
     shuttleRepository: ShuttleRepository
 ): Result<AdminOperationSnapshot?> = runCatching {
-    schedules.distinctBy { it.id }.forEach { schedule ->
-        val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull() ?: return@forEach
-        if (!busStatus.status.isRunningBusStatus()) return@forEach
-
-        val totalSeats = busStatus.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
-        val serverRemainingSeats = busStatus.currentSeats
-            ?: busStatus.remainingSeats
-            ?: busStatus.availableSeats
-        val serverPassengers = busStatus.currentPassengers
-            ?: busStatus.passengerCount
-            ?: serverRemainingSeats?.let { totalSeats - it }
-            ?: (totalSeats - schedule.remainingSeats)
-
-        val passengers = serverPassengers.coerceIn(0, totalSeats)
-        val route = schedule
-            .copy(totalSeats = totalSeats, remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats))
-            .toDriverRoute()
-            .copy(busId = busStatus.busId ?: schedule.id.toLong())
-
-        return@runCatching AdminOperationSnapshot(route = route, passengers = passengers)
+    val snapshots = schedules.distinctBy { it.id }.mapNotNull { schedule ->
+        buildAdminOperationSnapshot(schedule, shuttleRepository, requireRunning = true).getOrNull()
     }
-    null
+    snapshots.minByOrNull { it.route.scheduledTime.distanceFromNowMinutes() }
+}
+
+private suspend fun buildAdminOperationSnapshot(
+    schedule: BusSchedule,
+    shuttleRepository: ShuttleRepository,
+    requireRunning: Boolean
+): Result<AdminOperationSnapshot?> = runCatching {
+    val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+    if (requireRunning && !busStatus?.status.isRunningBusStatus()) return@runCatching null
+
+    val totalSeats = busStatus?.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+    val serverPassengers = busStatus?.currentSeats
+        ?: busStatus?.currentPassengers
+        ?: busStatus?.passengerCount
+        ?: (busStatus?.remainingSeats ?: busStatus?.availableSeats)?.let { totalSeats - it }
+        ?: (totalSeats - schedule.remainingSeats)
+
+    val passengers = serverPassengers.coerceIn(0, totalSeats)
+    val route = schedule
+        .copy(totalSeats = totalSeats, remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats))
+        .toDriverRoute()
+        .copy(busId = busStatus?.busId ?: schedule.id.toLong())
+
+    AdminOperationSnapshot(route = route, passengers = passengers)
 }
 
 private fun String?.isRunningBusStatus(): Boolean {
     return this?.trim()?.uppercase() == "RUNNING"
+}
+
+private fun String.distanceFromNowMinutes(): Int {
+    val parts = take(5).split(":")
+    val hour = parts.getOrNull(0)?.toIntOrNull() ?: return Int.MAX_VALUE
+    val minute = parts.getOrNull(1)?.toIntOrNull() ?: 0
+    val scheduled = hour * 60 + minute
+    val now = java.util.Calendar.getInstance().let {
+        it.get(java.util.Calendar.HOUR_OF_DAY) * 60 + it.get(java.util.Calendar.MINUTE)
+    }
+    val direct = kotlin.math.abs(scheduled - now)
+    return minOf(direct, 24 * 60 - direct)
+}
+
+private fun BusSchedule.departureHourOrNull(): Int? {
+    return departureTime.take(2).toIntOrNull()
+}
+
+private fun List<Int>.closestToCurrentHourOrNull(): Int? {
+    if (isEmpty()) return null
+    val now = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+    return minByOrNull { kotlin.math.abs(it - now) } ?: firstOrNull()
+}
+
+private fun String.toDisplayClockText(): String {
+    if (this == "미정") return this
+    val clockPattern = Regex("""\b([01]?\d|2[0-3]):([0-5]\d)""")
+    return clockPattern.find(this)?.value ?: this
 }
 
 @Composable
@@ -2079,6 +2420,7 @@ private fun StudentBottomBar(selected: StudentTab, onTabClick: (StudentTab) -> U
         modifier = Modifier
             .fillMaxWidth()
             .background(NavyBlue)
+            .navigationBarsPadding()
             .padding(vertical = 8.dp)
     ) {
         StudentTabItem(Icons.Filled.Schedule, "시간표",   selected == StudentTab.TIMETABLE, { onTabClick(StudentTab.TIMETABLE)  }, Modifier.weight(1f))

@@ -31,6 +31,7 @@ data class DriverRoute(
     val scheduledTime: String,
     val totalSeats: Int,
     val stops: List<String>,
+    val timetableId: Long? = null,
     val busId: Long? = null
 )
 
@@ -133,7 +134,10 @@ class DriverViewModel(
                 .getOrNull()
                 ?.busId
                 ?: route?.busId
-                ?: timetableId
+            if (busId == null) {
+                operationMessage = "출발 등록 완료, busId 조회 실패로 GPS 전송을 보류했습니다"
+                return@launch
+            }
 
             shuttleRepository.postDriverLocation(
                 busId = busId,
@@ -147,8 +151,70 @@ class DriverViewModel(
         }
     }
 
+    fun sendCurrentLocation(latitude: Double, longitude: Double) {
+        val route = selectedRoute ?: return
+        if (operationState != OperationState.OPERATING) return
+
+        val timetableId = route.timetableId()
+        lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+        viewModelScope.launch {
+            val busId = shuttleRepository.getBusStatuses(timetableId)
+                .getOrNull()
+                ?.busId
+                ?: route.busId
+            if (busId == null) {
+                operationMessage = "busId 조회 실패로 GPS 갱신을 보류했습니다"
+                return@launch
+            }
+
+            shuttleRepository.postDriverLocation(
+                busId = busId,
+                latitude = latitude,
+                longitude = longitude
+            ).onSuccess {
+                operationMessage = "GPS 위치가 서버에 갱신되었습니다"
+            }.onFailure { throwable ->
+                operationMessage = "GPS 갱신 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
+            }
+        }
+    }
+
     fun setGpsStartError(message: String) {
         operationMessage = message
+    }
+
+    fun updateOperationMessage(message: String) {
+        operationMessage = message
+    }
+
+    fun refreshPassengerStateFromServer(showMessage: Boolean = false) {
+        val route = selectedRoute ?: return
+        val timetableId = route.timetableId()
+        viewModelScope.launch {
+            shuttleRepository.getBusStatuses(timetableId)
+                .onSuccess { response ->
+                    val total = response?.totalSeats ?: route.totalSeats
+                    val passengers = response?.currentSeats
+                        ?: response?.currentPassengers
+                        ?: response?.passengerCount
+                        ?: (response?.remainingSeats ?: response?.availableSeats)?.let { total - it }
+                    if (passengers != null) {
+                        passengerCount = passengers.coerceIn(0, total)
+                    }
+                    selectedRoute = route.copy(
+                        totalSeats = total,
+                        busId = response?.busId ?: route.busId
+                    )
+                    if (showMessage) {
+                        operationMessage = "서버 좌석 상태를 새로고침했습니다"
+                    }
+                }
+                .onFailure { throwable ->
+                    if (showMessage) {
+                        operationMessage = "좌석 상태 새로고침 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
+                    }
+                }
+        }
     }
 
     fun endOperation() {
@@ -193,9 +259,12 @@ class DriverViewModel(
             shuttleRepository.postBusTag(timetableId, BusTagRequest(type = type))
                 .onSuccess { response ->
                     val total = response?.totalSeats ?: route.totalSeats
-                    val currentSeats = response?.currentSeats
-                    if (currentSeats != null) {
-                        passengerCount = (total - currentSeats).coerceIn(0, total)
+                    val currentPassengers = response?.currentSeats
+                    val remainingSeats = response?.remainingSeats
+                    passengerCount = when {
+                        currentPassengers != null -> currentPassengers.coerceIn(0, total)
+                        remainingSeats != null -> (total - remainingSeats).coerceIn(0, total)
+                        else -> passengerCount.coerceIn(0, total)
                     }
                     operationMessage = if (type == "BOARD") {
                         "탑승 수가 서버에 반영되었습니다"
@@ -211,7 +280,7 @@ class DriverViewModel(
 }
 
 private fun DriverRoute.timetableId(): Long {
-    return id.digitsAsLong() ?: busId ?: 1L
+    return timetableId ?: id.digitsAsLong() ?: busId ?: 1L
 }
 
 private fun String.digitsAsLong(): Long? {
