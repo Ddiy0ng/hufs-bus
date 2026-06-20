@@ -169,11 +169,15 @@ fun StudentMainScreen(
         }
     }
 
-    LaunchedEffect(currentScreen, selectedSchedule.id) {
+    DisposableEffect(currentScreen, selectedSchedule.id) {
         if (currentScreen == StudentScreen.ROUTE_STATUS) {
-            while (true) {
-                studentBusViewModel.loadRouteStatus(selectedSchedule)
-                delay(5_000)
+            studentBusViewModel.startRouteStatusUpdates(selectedSchedule)
+        } else {
+            studentBusViewModel.stopRouteStatusUpdates()
+        }
+        onDispose {
+            if (currentScreen == StudentScreen.ROUTE_STATUS) {
+                studentBusViewModel.stopRouteStatusUpdates()
             }
         }
     }
@@ -290,11 +294,15 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
         remainingSeats = remainingSeats.coerceIn(0, FIXED_TOTAL_SEATS)
     )
     val route = driverViewModel.selectedRoute ?: return normalized
-    if (route.routeName != routeName || route.scheduledTime != departureTime) return normalized
+    val sameTimetable = route.timetableId != null && timetableId != null && route.timetableId == timetableId
+    val sameLegacyRoute = route.timetableId == null && timetableId == null &&
+        route.routeName == routeName &&
+        route.scheduledTime == departureTime
+    if (!sameTimetable && !sameLegacyRoute) return normalized
 
     val currentPassengers = driverViewModel.passengerCount.coerceIn(0, FIXED_TOTAL_SEATS)
     val liveLocation = when (driverViewModel.operationState) {
-        OperationState.BEFORE_DEPARTURE -> "출발 전입니다"
+        OperationState.BEFORE_DEPARTURE -> "운행 전입니다"
         OperationState.OPERATING -> "운행 중입니다"
         OperationState.COMPLETED -> "운행이 종료되었습니다"
     }
@@ -683,7 +691,7 @@ private fun StudentRouteStatusContent(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}".replace("조회 중", "조회중") else "운행 전",
+                    if (routeDetail.isRunning) "예상: ${routeDetail.etaText}".replace("조회 중", "조회중") else routeDetail.statusText,
                     style = ShuttleRegularTextStyle.copy(
                         fontSize = 13.sp,
                         lineHeight = 13.sp,
@@ -1524,23 +1532,31 @@ private fun StudentMyPageContent(
                                     noticeMessage = "등록할 시간표 파일을 먼저 선택해 주세요"
                                 } else if (!file.isWithinUploadLimit()) {
                                     noticeMessage = "파일은 최대 10MB 이하만 등록할 수 있습니다"
-                                } else if (adminUploaded) {
-                                    adminUploaded = false
-                                    noticeMessage = "시간표 파일을 다시 수정할 수 있습니다"
                                 } else {
                                     scope.launch {
-                                        noticeMessage = "버스 시간표를 업로드 중입니다"
+                                        val uploadMethod = if (adminUploaded) "PUT" else "POST"
+                                        noticeMessage = if (adminUploaded) {
+                                            "버스 시간표를 수정 업로드 중입니다"
+                                        } else {
+                                            "버스 시간표를 업로드 중입니다"
+                                        }
                                         val success = apiClient.uploadFile(
                                             context = context,
                                             path = "/api/timetable",
                                             uri = file.uri,
                                             fileName = file.name,
-                                            mimeType = file.mimeType
+                                            mimeType = file.mimeType,
+                                            method = uploadMethod,
+                                            formFieldName = "file"
                                         )
                                         adminUploaded = success
                                         noticeMessage = if (success) {
                                             onRefreshSchedules()
-                                            "버스 시간표가 업로드되었습니다"
+                                            if (uploadMethod == "PUT") {
+                                                "버스 시간표가 수정되었습니다"
+                                            } else {
+                                                "버스 시간표가 업로드되었습니다"
+                                            }
                                         } else {
                                             "시간표 업로드에 실패했습니다. 서버 상태를 확인해 주세요"
                                         }
@@ -1930,9 +1946,9 @@ private fun AdminPassengerControlSection(
     val remainingSeats = (totalSeats - passengers).coerceAtLeast(0)
     val isOperating = operationState == OperationState.OPERATING
     val stateLabel = when (operationState) {
-        OperationState.BEFORE_DEPARTURE -> "출발 전"
+        OperationState.BEFORE_DEPARTURE -> "운행 전"
         OperationState.OPERATING -> "운행 중"
-        OperationState.COMPLETED -> "운행 완료"
+        OperationState.COMPLETED -> "운행 종료"
     }
     val manualSchedules = remember(schedules) {
         schedules

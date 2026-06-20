@@ -1,5 +1,6 @@
 package com.hufsteam.shuttletrack.data.repository
 
+import android.util.Log
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
@@ -18,11 +19,20 @@ import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TermsResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+
+private const val BUS_TAG_LOG_TAG = "BusTagApi"
+private const val LIVE_LOG_TAG = "LiveSseApi"
+private const val DRIVER_LOCATION_LOG_TAG = "DriverLocationApi"
 
 class ShuttleRepository(
     private val apiService: ApiService = RetrofitClient.apiService,
@@ -48,31 +58,39 @@ class ShuttleRepository(
             val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
                 .toHttpUrl()
                 .newBuilder()
-                .apply { token?.let { addQueryParameter("token", it) } }
                 .build()
             val request = Request.Builder()
                 .url(url)
                 .header("Accept", "text/event-stream")
+                .apply { token?.let { header("Authorization", "Bearer $it") } }
                 .build()
             val liveClient = RetrofitClient.okHttpClient.newBuilder()
                 .readTimeout(2, TimeUnit.SECONDS)
                 .build()
 
             liveClient.newCall(request).execute().use { response ->
+                Log.i(
+                    LIVE_LOG_TAG,
+                    "getLiveEta timetableId=$timetableId url=$url hasAuth=${token != null} code=${response.code}"
+                )
                 if (!response.isSuccessful) {
-                    throw IOException("HTTP ${response.code}")
+                    val errorBody = response.body?.string().orEmpty()
+                    Log.e(LIVE_LOG_TAG, "getLiveEta failed timetableId=$timetableId code=${response.code} body=$errorBody")
+                    throw IOException("HTTP ${response.code}: ${errorBody.ifBlank { "empty error body" }}")
                 }
 
                 val source = response.body?.source() ?: return@withContext null
                 val dataLines = mutableListOf<String>()
+                var eventName: String? = null
                 repeat(40) {
                     val line = source.readUtf8Line() ?: return@repeat
-                    if (line.startsWith("data:")) {
-                        dataLines += line.removePrefix("data:").trim()
-                    }
-                    if (line.isBlank() && dataLines.isNotEmpty()) {
-                        val payload = gson.fromJson(dataLines.joinToString(""), JsonElement::class.java)
-                        return@withContext payload.payloadSingleOrListFirst()?.let { gson.decode<LiveEtaResponse>(it) }
+                    when {
+                        line.startsWith("event:") -> eventName = line.removePrefix("event:").trim()
+                        line.startsWith("data:") -> dataLines += line.removePrefix("data:").trim()
+                        line.isBlank() && dataLines.isNotEmpty() -> {
+                            Log.i(LIVE_LOG_TAG, "getLiveEta event=$eventName timetableId=$timetableId")
+                            return@withContext dataLines.toLiveEtaOrNull()
+                        }
                     }
                 }
                 null
@@ -80,10 +98,53 @@ class ShuttleRepository(
         }
     }
 
+    fun subscribeLiveEta(timetableId: Long): Flow<LiveEtaResponse> = flow {
+        val token = TokenStore.accessToken?.takeIf { it.isNotBlank() }
+        val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
+            .toHttpUrl()
+            .newBuilder()
+            .build()
+        val request = Request.Builder()
+            .url(url)
+            .header("Accept", "text/event-stream")
+            .apply { token?.let { header("Authorization", "Bearer $it") } }
+            .build()
+        val liveClient = RetrofitClient.okHttpClient.newBuilder()
+            .readTimeout(0, TimeUnit.SECONDS)
+            .build()
+
+        liveClient.newCall(request).execute().use { response ->
+            Log.i(
+                LIVE_LOG_TAG,
+                "subscribeLiveEta timetableId=$timetableId url=$url hasAuth=${token != null} code=${response.code}"
+            )
+            if (!response.isSuccessful) {
+                val errorBody = response.body?.string().orEmpty()
+                Log.e(LIVE_LOG_TAG, "subscribeLiveEta failed timetableId=$timetableId code=${response.code} body=$errorBody")
+                throw IOException("HTTP ${response.code}: ${errorBody.ifBlank { "empty error body" }}")
+            }
+
+            val source = response.body?.source() ?: return@use
+            val dataLines = mutableListOf<String>()
+            var eventName: String? = null
+            while (currentCoroutineContext().isActive) {
+                val line = source.readUtf8Line() ?: break
+                when {
+                    line.startsWith("event:") -> eventName = line.removePrefix("event:").trim()
+                    line.startsWith("data:") -> dataLines += line.removePrefix("data:").trim()
+                    line.isBlank() && dataLines.isNotEmpty() -> {
+                        Log.i(LIVE_LOG_TAG, "subscribeLiveEta event=$eventName timetableId=$timetableId")
+                        dataLines.toLiveEtaOrNull()?.let { emit(it) }
+                        dataLines.clear()
+                        eventName = null
+                    }
+                }
+            }
+        }
+    }.flowOn(Dispatchers.IO)
+
     suspend fun getBusStatuses(timetableId: Long): Result<BusStatusResponse?> = runCatching {
-        val response = runCatching { apiService.getBusStatuses(timetableId) }
-            .recoverCatching { apiService.getBusSeats(timetableId) }
-            .getOrThrow()
+        val response = apiService.getBusSeats(timetableId)
         response.payloadSingleOrListFirst()?.let { gson.decode<BusStatusResponse>(it) }
     }
 
@@ -94,7 +155,34 @@ class ShuttleRepository(
     }
 
     suspend fun postBusTag(timetableId: Long, request: BusTagRequest): Result<BusTagResponse?> = runCatching {
-        apiService.postBusTag(timetableId, request).payloadSingleOrListFirst()?.let { gson.decode<BusTagResponse>(it) }
+        val endpoint = "/api/buses/$timetableId/tags"
+        val requestJson = gson.toJson(request)
+        Log.i(BUS_TAG_LOG_TAG, "request endpoint=$endpoint timetableId=$timetableId body=$requestJson")
+
+        val response = apiService.postBusTagRaw(timetableId, request)
+        val responseCode = response.code()
+        val responseBody = response.body()
+        val errorBody = response.errorBody()?.string().orEmpty()
+        val responseText = responseBody?.toString() ?: errorBody
+
+        if (!response.isSuccessful) {
+            Log.e(
+                BUS_TAG_LOG_TAG,
+                "failed endpoint=$endpoint timetableId=$timetableId body=$requestJson code=$responseCode response=$responseText"
+            )
+            throw IOException("HTTP $responseCode: ${responseText.ifBlank { "empty error body" }}")
+        }
+
+        val decoded = responseBody
+            ?.payloadSingleOrListFirst()
+            ?.let { gson.decode<BusTagResponse>(it) }
+        Log.i(
+            BUS_TAG_LOG_TAG,
+            "success endpoint=$endpoint timetableId=$timetableId body=$requestJson code=$responseCode " +
+                "busId=${decoded?.busId} currentSeats=${decoded?.currentSeats} totalSeats=${decoded?.totalSeats} " +
+                "remainingSeats=${decoded?.remainingSeats} tagType=${decoded?.tagType}"
+        )
+        decoded
     }
 
     suspend fun postDriverLocation(
@@ -102,6 +190,10 @@ class ShuttleRepository(
         latitude: Double,
         longitude: Double
     ): Result<DriverLocationResponse?> = runCatching {
+        Log.i(
+            DRIVER_LOCATION_LOG_TAG,
+            "postDriverLocation busId=$busId latitude=$latitude longitude=$longitude"
+        )
         apiService.postDriverLocation(
             DriverLocationRequest(
                 busId = busId,
@@ -111,33 +203,35 @@ class ShuttleRepository(
         ).payloadSingleOrListFirst()?.let { gson.decode<DriverLocationResponse>(it) }
     }
 
+    suspend fun getDriverLocation(busId: Long): Result<DriverLocationResponse?> = runCatching {
+        Log.i(DRIVER_LOCATION_LOG_TAG, "getDriverLocation busId=$busId endpoint=/api/driver/location/$busId")
+        apiService.getDriverLocation(busId)
+            .payloadSingleOrListFirst()
+            ?.let { gson.decode<DriverLocationResponse>(it) }
+    }
+
+    private fun List<String>.toLiveEtaOrNull(): LiveEtaResponse? {
+        return runCatching {
+            val payload = gson.fromJson(joinToString(""), JsonElement::class.java)
+            payload.payloadSingleOrListFirst()?.let { gson.decode<LiveEtaResponse>(it) }
+        }.getOrNull()
+    }
+
     suspend fun getFavorites(): Result<List<FavoriteResponse>> = runCatching {
         val favorites = mutableListOf<FavoriteResponse>()
-        var requestCount = 0
-        var failureCount = 0
 
         favoriteCampuses.forEach { campus ->
             favoriteDays.forEach { day ->
-                requestCount += 1
                 runCatching { apiService.getFavorite(inOutCampus = campus, day = day) }
                     .onSuccess { response ->
                         response.payloadList()
                             .map { it.withFavoriteMetadata(campus, day) }
                             .mapNotNullTo(favorites) { gson.decode<FavoriteResponse>(it) }
                     }
-                    .onFailure { failureCount += 1 }
             }
         }
 
-        val resolvedFavorites = if (favorites.isEmpty() && requestCount == failureCount) {
-            apiService.getFavorites()
-                .payloadList()
-                .mapNotNull { gson.decode<FavoriteResponse>(it) }
-        } else {
-            favorites
-        }
-
-        resolvedFavorites.distinctBy {
+        favorites.distinctBy {
             listOfNotNull(
                 it.timetableId ?: it.specificTimetableId ?: it.id,
                 it.day ?: it.dayOfWeek,
@@ -171,10 +265,8 @@ class ShuttleRepository(
         Unit
     }
 
-    suspend fun deleteFavorite(specificTimetableId: Long): Result<Unit> = runCatching {
-        runCatching { apiService.deleteFavoriteLegacy(specificTimetableId, "MON") }
-            .recoverCatching { apiService.deleteFavorite(specificTimetableId) }
-            .getOrThrow()
+    suspend fun deleteFavorite(favoriteId: Long, day: String = "MON"): Result<Unit> = runCatching {
+        apiService.deleteFavoriteLegacy(favoriteId, day)
         Unit
     }
 

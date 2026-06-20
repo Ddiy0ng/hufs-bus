@@ -53,6 +53,7 @@ class AuthRepository(
                 SignupRequest(
                     email = email,
                     password = password,
+                    name = email.substringBefore("@").ifBlank { "사용자" },
                     privacyTermAgree = privacyTermAgree,
                     serviceTermAgree = serviceTermAgree
                 )

@@ -311,17 +311,8 @@ private fun RouteInfo.toDriverRoute(entry: TimetableEntry): DriverRoute {
         totalSeats = 45,
         stops = stopsForRoute(label),
         timetableId = entry.timetableId,
-        busId = busIdForRoute(label)
+        busId = null
     )
-}
-
-private fun busIdForRoute(label: String): Long {
-    return when {
-        label.contains("경기광주역") && label.startsWith("경기광주역") -> 1L
-        label.contains("경기광주역") && label.startsWith("외대") -> 2L
-        label.contains("판교") -> 3L
-        else -> 1L
-    }
 }
 
 private fun stopsForRoute(label: String): List<String> {
