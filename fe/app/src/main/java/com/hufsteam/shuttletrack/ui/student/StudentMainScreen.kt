@@ -94,7 +94,9 @@ data class BusSchedule(
     val totalSeats: Int,
     val currentLocation: String,
     val routeStops: List<String> = emptyList(),
-    val campusType: String = "미분류"
+    val campusType: String = "미분류",
+    val hasSeatInfo: Boolean = false,
+    val seatInfoSource: String = "pending"
 )
 
 data class FavoriteSchedule(
@@ -308,7 +310,9 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
     }
     return normalized.copy(
         remainingSeats = (FIXED_TOTAL_SEATS - currentPassengers).coerceIn(0, FIXED_TOTAL_SEATS),
-        currentLocation = liveLocation
+        currentLocation = liveLocation,
+        hasSeatInfo = true,
+        seatInfoSource = "local-driver-state"
     )
 }
 
@@ -584,6 +588,16 @@ private fun EmptyStateMessage(message: String) {
 
 @Composable
 private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
+    val seatLabel = if (schedule.hasSeatInfo) {
+        "(${schedule.remainingSeats}석)"
+    } else {
+        "(확인 중)"
+    }
+    val seatColor = when {
+        !schedule.hasSeatInfo -> Color(0xFF9AA0A6)
+        schedule.remainingSeats <= 10 -> Color(0xFFE53935)
+        else -> NavyBlue
+    }
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         shape    = RoundedCornerShape(14.dp),
@@ -595,10 +609,10 @@ private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
                 Text(schedule.departureTime, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111111))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "(${schedule.remainingSeats}석)",
+                    seatLabel,
                     fontSize   = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = if (schedule.remainingSeats <= 10) Color(0xFFE53935) else NavyBlue
+                    color      = seatColor
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -1202,6 +1216,11 @@ private fun StudentFavoritesContent(
                                         .clip(RoundedCornerShape(8.dp))
                                         .clickable { onScheduleClick(favorite) }
                                 ) {
+                                    val favoriteSeatLabel = if (favorite.schedule.hasSeatInfo) {
+                                        "(${favorite.schedule.remainingSeats}석)"
+                                    } else {
+                                        "(확인 중)"
+                                    }
                                     Text(
                                         favorite.schedule.routeName,
                                         fontSize = 13.sp,
@@ -1218,8 +1237,8 @@ private fun StudentFavoritesContent(
                                         )
                                         Spacer(Modifier.width(6.dp))
                                         Text(
-                                            "(${favorite.schedule.remainingSeats}석)",
-                                            color = Color(0xFFE53935),
+                                            favoriteSeatLabel,
+                                            color = if (favorite.schedule.hasSeatInfo) Color(0xFFE53935) else Color(0xFF9AA0A6),
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -2253,12 +2272,16 @@ private suspend fun buildAdminOperationSnapshot(
     val serverPassengers = busStatus?.currentSeats
         ?: busStatus?.currentPassengers
         ?: busStatus?.passengerCount
-        ?: (busStatus?.remainingSeats ?: busStatus?.availableSeats)?.let { totalSeats - it }
-        ?: (totalSeats - schedule.remainingSeats)
+        ?: 0
 
     val passengers = serverPassengers.coerceIn(0, totalSeats)
     val route = schedule
-        .copy(totalSeats = totalSeats, remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats))
+        .copy(
+            totalSeats = totalSeats,
+            remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats),
+            hasSeatInfo = true,
+            seatInfoSource = "seats API"
+        )
         .toDriverRoute()
         .copy(busId = busStatus?.busId ?: schedule.id.toLong())
 
