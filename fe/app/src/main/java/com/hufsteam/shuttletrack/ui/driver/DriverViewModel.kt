@@ -741,6 +741,14 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        // 낙관적 업데이트: 서버 응답 전에 로컬 카운트를 즉시 반영
+        val optimisticCount = if (type == "BOARD") {
+            (passengerCount + 1).coerceAtMost(route.totalSeats)
+        } else {
+            (passengerCount - 1).coerceAtLeast(0)
+        }
+        passengerCount = optimisticCount
+
         operationMessage = if (type == "BOARD") {
             "탑승 수를 서버에 반영 중입니다"
         } else {
@@ -761,14 +769,8 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                                 ?: response?.totalSeats
                                 ?: route.totalSeats
 
-                            val current = seatResponse?.currentSeats
-                                ?: seatResponse?.currentPassengers
-                                ?: seatResponse?.passengerCount
-                                ?: response?.currentSeats
-
-                            if (current != null) {
-                                passengerCount = current.coerceIn(0, total)
-                            }
+                            // 드라이버의 로컬 집계가 정답 — 서버 currentSeats로 덮어쓰지 않음
+                            // (서버가 currentSeats = totalSeats 로 잘못 초기화되는 버그 방지)
 
                             val busId = seatResponse?.busId ?: response?.busId ?: route.busId
 
