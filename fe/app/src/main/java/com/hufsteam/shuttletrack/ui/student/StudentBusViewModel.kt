@@ -308,7 +308,7 @@ class StudentBusRepository(
 
     suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>, isExisting: Boolean): Boolean {
         return shuttleRepository.saveFavorite(
-            timetableId = schedule.id.toLong(),
+            timetableId = schedule.timetableId ?: schedule.id.toLong(),
             days = days.map(::toApiDay).toSet(),
             isExisting = isExisting
         ).isSuccess
@@ -321,7 +321,7 @@ class StudentBusRepository(
     private fun TimetableResponse.toSchedule(index: Int, fallback: List<BusSchedule>, defaultCampusType: String = ""): BusSchedule {
         val stopPoints = (routeList ?: stops).toStopPoints()
         val routeStops = stopPoints.map { it.name }
-        val fallbackSchedule = fallback.takeIf { it.isNotEmpty() }?.let { it[index % it.size] }
+        val fallbackSchedule = fallback.getOrNull(index % fallback.size)
         val fallbackRoute = if (routeStops.size >= 2) {
             "${routeStops.first().cleanStopName()} → ${routeStops.last().cleanStopName()}"
         } else {
@@ -390,9 +390,19 @@ class StudentBusRepository(
             )
         }
 
-        // 운행 중: currentSeats는 백엔드 기준 현재 탑승 수입니다.
+        // 운행 중: 탑승 인원 계산 (1순위: currentSeats, 2순위: totalSeats - remainingSeats)
+        val serverRemaining = firstInt(busStatus.remainingSeats, busStatus.availableSeats)
         val current = firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
-        if (current == null) {
+        val currentPassengerCount: Int
+        val remaining: Int
+        if (current != null) {
+            currentPassengerCount = current.coerceIn(0, total)
+            remaining = (total - currentPassengerCount).coerceIn(0, total)
+        } else if (serverRemaining != null) {
+            remaining = serverRemaining.coerceIn(0, total)
+            // remainingSeats=0 → currentSeats=45 역산 금지 (서버 초기화 버그 방지)
+            currentPassengerCount = 0
+        } else {
             logSeatDisplay(
                 schedule = this,
                 totalSeats = total,
@@ -403,8 +413,6 @@ class StudentBusRepository(
             )
             return copy(totalSeats = total, runningStatus = "RUNNING", hasSeatInfo = false, seatInfoSource = "error")
         }
-        val currentPassengerCount = current.coerceIn(0, total)
-        val remaining = (total - currentPassengerCount).coerceIn(0, total)
 
         val locationText = busStatus.currentStopName
             ?.takeIf { it.isNotBlank() }

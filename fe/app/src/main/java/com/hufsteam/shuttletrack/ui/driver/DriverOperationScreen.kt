@@ -100,10 +100,12 @@ fun DriverOperationScreen(
         }
     }
 
-    // 화면 진입 시 서버 상태 복원
+    // 화면 진입 시 서버 상태 복원 (운행 중에는 호출하지 않음 — 로컬 집계 보호)
     LaunchedEffect(route.id) {
-        val timetableId = route.timetableId ?: route.id.filter { it.isDigit() }.toLongOrNull() ?: 1L
-        driverViewModel.restoreStateFromServer(timetableId)
+        if (driverViewModel.operationState != OperationState.OPERATING) {
+            val timetableId = route.timetableId ?: route.id.filter { it.isDigit() }.toLongOrNull() ?: 1L
+            driverViewModel.restoreStateFromServer(timetableId)
+        }
     }
 
     LaunchedEffect(state, isGpsTracking, route.id) {
