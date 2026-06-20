@@ -10,9 +10,9 @@ import com.hufsteam.shuttletrack.data.remote.TokenStore
 import com.hufsteam.shuttletrack.data.repository.AuthRepository
 import kotlinx.coroutines.launch
 
-class AuthViewModel(
-    private val repository: AuthRepository = AuthRepository()
-) : ViewModel() {
+class AuthViewModel : ViewModel() {
+
+    private val repository = AuthRepository()
 
     var userRole        by mutableStateOf<UserRole?>(null);   private set
     var isLoading       by mutableStateOf(false);              private set
