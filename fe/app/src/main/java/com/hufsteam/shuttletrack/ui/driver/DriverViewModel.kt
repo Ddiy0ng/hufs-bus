@@ -56,11 +56,9 @@ data class SeatState(
 
 // ── ViewModel ────────────────────────────────────────────────
 
-class DriverViewModel(
-    application: Application,
-    private val shuttleRepository: ShuttleRepository = ShuttleRepository()
-) : AndroidViewModel(application) {
+class DriverViewModel(application: Application) : AndroidViewModel(application) {
 
+    private val shuttleRepository = ShuttleRepository()
     private val prefs = application.getSharedPreferences(PREFS_DRIVER_OPS, android.content.Context.MODE_PRIVATE)
 
     var selectedRoute by mutableStateOf<DriverRoute?>(null)

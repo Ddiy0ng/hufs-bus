@@ -58,9 +58,9 @@ data class StudentBusUiState(
     val errorMessage: String? = null
 )
 
-class StudentBusViewModel(
-    private val repository: StudentBusRepository = StudentBusRepository()
-) : ViewModel() {
+class StudentBusViewModel : ViewModel() {
+
+    private val repository = StudentBusRepository()
     var uiState by mutableStateOf(StudentBusUiState())
         private set
     private var routeStatusJob: Job? = null
