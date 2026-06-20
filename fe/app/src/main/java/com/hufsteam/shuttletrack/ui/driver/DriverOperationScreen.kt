@@ -121,14 +121,6 @@ fun DriverOperationScreen(
         }
     }
 
-    LaunchedEffect(state, route.id) {
-        if (state == OperationState.OPERATING) {
-            while (true) {
-                driverViewModel.refreshPassengerStateFromServer(showMessage = false)
-                delay(5_000)
-            }
-        }
-    }
 
     Column(
         modifier = Modifier
