@@ -101,6 +101,12 @@ fun DriverOperationScreen(
         }
     }
 
+    // 화면 진입 시 서버 상태 복원
+    LaunchedEffect(route.id) {
+        val timetableId = route.timetableId ?: route.id.filter { it.isDigit() }.toLongOrNull() ?: 1L
+        driverViewModel.restoreStateFromServer(timetableId)
+    }
+
     LaunchedEffect(state, isGpsTracking, route.id) {
         if (state == OperationState.OPERATING && isGpsTracking) {
             while (true) {
@@ -228,7 +234,9 @@ fun DriverOperationScreen(
                         remainingSeats   = remainingSeats,
                         isGpsTracking    = isGpsTracking,
                         message          = operationMessage,
-                        lastGpsText      = lastGpsText
+                        lastGpsText      = lastGpsText,
+                        onBoard          = { driverViewModel.increasePassengers() },
+                        onAlight         = { driverViewModel.decreasePassengers() }
                     )
                 }
 
@@ -324,7 +332,9 @@ private fun OperatingContent(
     remainingSeats: Int,
     isGpsTracking: Boolean,
     message: String,
-    lastGpsText: String?
+    lastGpsText: String?,
+    onBoard: () -> Unit,
+    onAlight: () -> Unit
 ) {
     OperationStatePill(message = message, isActive = isGpsTracking)
     lastGpsText?.let {
@@ -344,9 +354,57 @@ private fun OperatingContent(
         total = total,
         remainingSeats = remainingSeats
     )
-    Spacer(Modifier.height(14.dp))
+
+    Spacer(Modifier.height(24.dp))
+
+    // ── 상차/하차 수기 집계 버튼 ───────────────────────────────
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Button(
+            onClick  = onAlight,
+            enabled  = passengers > 0,
+            shape    = RoundedCornerShape(10.dp),
+            colors   = ButtonDefaults.buttonColors(
+                containerColor         = Color(0xFFE53935),
+                disabledContainerColor = Color(0xFFE0E0E0)
+            ),
+            modifier = Modifier
+                .width(110.dp)
+                .height(52.dp)
+        ) {
+            Text(
+                "− 하차",
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color      = Color.White
+            )
+        }
+        Button(
+            onClick  = onBoard,
+            enabled  = passengers < total,
+            shape    = RoundedCornerShape(10.dp),
+            colors   = ButtonDefaults.buttonColors(
+                containerColor         = NavyBlue,
+                disabledContainerColor = Color(0xFFE0E0E0)
+            ),
+            modifier = Modifier
+                .width(110.dp)
+                .height(52.dp)
+        ) {
+            Text(
+                "+ 탑승",
+                fontSize   = 15.sp,
+                fontWeight = FontWeight.Bold,
+                color      = Color.White
+            )
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
     Text(
-        "탑승/하차 수는 관리자 수기 집계와 연동됩니다",
+        "버튼을 누르면 서버에 즉시 반영됩니다",
         fontSize = 12.sp,
         color = Color(0xFF777777),
         textAlign = TextAlign.Center

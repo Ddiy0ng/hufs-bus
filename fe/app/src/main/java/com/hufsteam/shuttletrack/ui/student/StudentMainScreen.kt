@@ -642,7 +642,8 @@ private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
     }
     val seatColor = when {
         !schedule.hasSeatInfo -> Color(0xFF9AA0A6)
-        schedule.remainingSeats <= 10 -> Color(0xFFE53935)
+        schedule.remainingSeats == 0 -> Color(0xFFE53935)
+        schedule.remainingSeats <= 5 -> Color(0xFFE65100)
         else -> NavyBlue
     }
     Card(
