@@ -256,8 +256,9 @@ fun StudentMainScreen(
                     val currentSchedule = selectedSchedule
                     if (currentSchedule != null) {
                         val liveSelectedSchedule = currentSchedule.withLivePassengerState(driverViewModel)
-                        val liveRouteDetail = studentUiState.selectedRouteDetail
-                            ?: emptyRouteDetail(liveSelectedSchedule)
+                        val liveRouteDetail = (studentUiState.selectedRouteDetail
+                            ?: emptyRouteDetail(liveSelectedSchedule))
+                            .withSeatText(liveSelectedSchedule)
                         StudentRouteStatusContent(
                             schedule = liveSelectedSchedule,
                             routeDetail = liveRouteDetail,
