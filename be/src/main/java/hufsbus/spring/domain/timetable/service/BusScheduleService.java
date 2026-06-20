@@ -5,6 +5,7 @@ import hufsbus.spring.domain.bus.repository.BusRepository;
 import hufsbus.spring.domain.timetable.dto.BusRouteResponseDto;
 import hufsbus.spring.domain.timetable.dto.ExcelRequestDto;
 import hufsbus.spring.domain.timetable.dto.TimetableResponseDto;
+import hufsbus.spring.domain.timetable.dto.TimetableUploadResponse;
 import hufsbus.spring.domain.timetable.entity.BusRoute;
 import hufsbus.spring.domain.timetable.entity.BusStop;
 import hufsbus.spring.domain.timetable.entity.Timetable;
@@ -46,7 +47,7 @@ public class BusScheduleService {
 
     /*-----------액셀 업로드 및 저장-----------*/
     @Transactional
-    public void createTimetables(MultipartFile multipartFile) {
+    public TimetableUploadResponse createTimetables(MultipartFile multipartFile) {
 
         try (InputStream inputStream = multipartFile.getInputStream()) {
             List<ExcelRequestDto> excelRequestDtoList = fileUpload.fileToTimetable(inputStream);
@@ -59,10 +60,15 @@ public class BusScheduleService {
                     ));
 
             Map<String, Long> savedInSession = new HashMap<>();
+            int timetableCount = 0;
 
             for (ExcelRequestDto excelRequestDto : excelRequestDtoList) {
-                saveTimetable(excelRequestDto, batchCounts, savedInSession);
+                if (saveTimetable(excelRequestDto, batchCounts, savedInSession)) {
+                    timetableCount++;
+                }
             }
+
+            return TimetableUploadResponse.of(timetableCount, timetableCount);
         } catch (IOException e) {
             throw new CustomException(ErrorCode.PARSE_TIMETABLE_EXCEPTION);
         }
@@ -97,8 +103,8 @@ public class BusScheduleService {
         }
     }
 
-    // 단일 시간표 저장
-    private void saveTimetable(ExcelRequestDto excelRequestDto, Map<String, Long> batchCounts, Map<String, Long> savedInSession) {
+    // 단일 시간표 저장 (생성 시 true 반환)
+    private boolean saveTimetable(ExcelRequestDto excelRequestDto, Map<String, Long> batchCounts, Map<String, Long> savedInSession) {
 
         LocalTime departAt = excelRequestDto.getDepartAt();
         InOutCampusEnum inOutCampus = excelRequestDto.getInOutCampus();
@@ -148,7 +154,7 @@ public class BusScheduleService {
         long savedSoFar = savedInSession.getOrDefault(batchKey, 0L);
 
         if (savedSoFar >= expectedCount)
-            return;
+            return false;
 
         // Timetable 객체 생성
         Timetable timetable = Timetable.of(departAt, busRoute);
@@ -164,6 +170,7 @@ public class BusScheduleService {
                 .timetable(timetable)
                 .build();
         busRepository.save(bus);
+        return true;
     }
 
     // 경로 파싱(여러 버스정류장들의 묶음이 하나로 들어오니까,,,)
@@ -235,6 +242,10 @@ public class BusScheduleService {
 
         List<Timetable> timetableList = timetableRepository.searchTimetables(inOutCampus, routeIdValue, startAt, endAt);
 
+        List<Long> timetableIds = timetableList.stream().map(Timetable::getId).toList();
+        Map<Long, Bus> busMap = busRepository.findByTimetableIdIn(timetableIds).stream()
+                .collect(Collectors.toMap(bus -> bus.getTimetable().getId(), bus -> bus));
+
         Map<Long, List<BusStop>> busStopCache = new HashMap<>();
         List<TimetableResponseDto> timetableResponseDtoList = new ArrayList<>();
 
@@ -246,7 +257,8 @@ public class BusScheduleService {
                     id -> busStopRepository.findByBusRouteOrderByStopOrderAsc(busRoute)
             );
 
-            timetableResponseDtoList.add(TimetableResponseDto.of(value, busStopList));
+            Bus bus = busMap.get(value.getId());
+            timetableResponseDtoList.add(TimetableResponseDto.of(value, busStopList, bus));
         }
 
         return timetableResponseDtoList;
