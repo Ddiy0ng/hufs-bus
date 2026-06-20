@@ -120,8 +120,8 @@ class ShuttleRepository(
     }.flowOn(Dispatchers.IO)
 
     suspend fun getBusStatuses(timetableId: Long): Result<BusStatusResponse?> = runCatching {
-        val response = runCatching { apiService.getBusStatuses(timetableId) }
-            .recoverCatching { apiService.getBusSeats(timetableId) }
+        val response = runCatching { apiService.getBusSeats(timetableId) }
+            .recoverCatching { apiService.getBusStatuses(timetableId) }
             .getOrThrow()
         response.payloadSingleOrListFirst()?.let { gson.decode<BusStatusResponse>(it) }
     }

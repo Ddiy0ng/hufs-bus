@@ -146,6 +146,7 @@ data class BusTagResponse(
 
 data class DepartResponse(
     val timetableId: Long? = null,
+    val busId: Long? = null,
     val actualDepartureTime: String? = null,
     val busStatus: String? = null
 )

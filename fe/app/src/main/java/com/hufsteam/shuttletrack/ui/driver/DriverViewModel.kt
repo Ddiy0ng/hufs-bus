@@ -46,24 +46,21 @@ val mockDriverRoutes = listOf(
         routeName     = "경기광주역 → 외대(글)",
         scheduledTime = "08:30",
         totalSeats    = 45,
-        stops         = listOf("경기광주역(기점)", "기숙사", "백년관", "인경관(종점)"),
-        busId         = 1
+        stops         = listOf("경기광주역(기점)", "기숙사", "백년관", "인경관(종점)")
     ),
     DriverRoute(
         id            = "route_2",
         routeName     = "외대(글) → 경기광주역",
         scheduledTime = "13:00",
         totalSeats    = 45,
-        stops         = listOf("인경관(기점)", "백년관", "기숙사", "경기광주역(종점)"),
-        busId         = 2
+        stops         = listOf("인경관(기점)", "백년관", "기숙사", "경기광주역(종점)")
     ),
     DriverRoute(
         id            = "route_3",
         routeName     = "판교역 → 외대(글)",
         scheduledTime = "17:30",
         totalSeats    = 45,
-        stops         = listOf("판교역(기점)", "성남역", "서현역", "외대-글(종점)"),
-        busId         = 3
+        stops         = listOf("판교역(기점)", "성남역", "서현역", "외대-글(종점)")
     )
 )
 
@@ -124,18 +121,22 @@ class DriverViewModel(
         operationMessage = "출발 등록 및 GPS 전송 중입니다"
 
         viewModelScope.launch {
+            var departBusId: Long? = null
             shuttleRepository.departTimetable(timetableId)
                 .onSuccess { depart ->
+                    departBusId = depart?.busId
                     actualDepartureTime = depart?.actualDepartureTime?.take(5) ?: now
                     operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
+                    if (departBusId != null) {
+                        selectedRoute = route?.copy(busId = departBusId)
+                    }
                 }
                 .onFailure { throwable ->
                     operationMessage = "출발 등록 실패, GPS 전송을 계속 시도합니다: ${throwable.message ?: "서버 응답 확인 필요"}"
                 }
 
-            val busId = shuttleRepository.getBusStatuses(timetableId)
-                .getOrNull()
-                ?.busId
+            val busId = departBusId
+                ?: shuttleRepository.getBusStatuses(timetableId).getOrNull()?.busId
                 ?: route?.busId
             if (busId == null) {
                 operationMessage = "출발 등록 완료, busId 조회 실패로 GPS 전송을 보류했습니다"
