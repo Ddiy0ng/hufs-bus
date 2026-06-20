@@ -285,9 +285,9 @@ fun DriverOperationScreen(
                 }
                 OperationState.COMPLETED -> {
                     OperationButton(
-                        text    = "운행 종료 완료",
-                        enabled = false,
-                        onClick = {}
+                        text    = "다시 출발 등록하기",
+                        enabled = true,
+                        onClick = { driverViewModel.resetForNewDeparture() }
                     )
                 }
             }

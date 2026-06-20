@@ -15,10 +15,13 @@ import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
 import com.hufsteam.shuttletrack.data.repository.SseEvent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 private const val OFF_CAMPUS = 1
@@ -116,30 +119,40 @@ class StudentBusViewModel : ViewModel() {
         routeStatusJob?.cancel()
         val timetableId = schedule.timetableId ?: schedule.id.toLong()
         routeStatusJob = viewModelScope.launch {
-            repository.subscribeRouteDetail(schedule)
-                .catch { e ->
-                    Log.e("SSE", "subscribeRouteDetail failed timetableId=$timetableId: ${e.message}", e)
-                    val detail = repository.loadRouteDetail(schedule)
-                    uiState = uiState.copy(selectedRouteDetail = detail)
-                }
-                .collectLatest { detail ->
-                    uiState = uiState.copy(selectedRouteDetail = detail)
-                    if (detail.currentPassengerCount >= 0) {
-                        val cnt = detail.currentPassengerCount
-                        val tot = detail.totalSeats
-                        val rem = (tot - cnt).coerceIn(0, tot)
-                        fun List<BusSchedule>.patched() = map { s ->
-                            if ((s.timetableId ?: s.id.toLong()) == timetableId)
-                                s.copy(currentPassengerCount = cnt, remainingSeats = rem,
-                                    totalSeats = tot, hasSeatInfo = true, seatInfoSource = "SSE")
-                            else s
+            while (isActive) {
+                try {
+                    repository.subscribeRouteDetail(schedule)
+                        .catch { e ->
+                            Log.e("SSE", "subscribeRouteDetail failed timetableId=$timetableId: ${e.message}", e)
+                            emit(repository.loadRouteDetail(schedule))
                         }
-                        uiState = uiState.copy(
-                            offCampusSchedules = uiState.offCampusSchedules.patched(),
-                            onCampusSchedules = uiState.onCampusSchedules.patched()
-                        )
-                    }
+                        .collectLatest { detail ->
+                            uiState = uiState.copy(selectedRouteDetail = detail)
+                            if (detail.currentPassengerCount >= 0) {
+                                val cnt = detail.currentPassengerCount
+                                val tot = detail.totalSeats
+                                val rem = (tot - cnt).coerceIn(0, tot)
+                                fun List<BusSchedule>.patched() = map { s ->
+                                    if ((s.timetableId ?: s.id.toLong()) == timetableId)
+                                        s.copy(currentPassengerCount = cnt, remainingSeats = rem,
+                                            totalSeats = tot, hasSeatInfo = true, seatInfoSource = "SSE")
+                                    else s
+                                }
+                                uiState = uiState.copy(
+                                    offCampusSchedules = uiState.offCampusSchedules.patched(),
+                                    onCampusSchedules = uiState.onCampusSchedules.patched()
+                                )
+                            }
+                        }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("SSE", "SSE collect threw timetableId=$timetableId: ${e.message}", e)
                 }
+                if (isActive) {
+                    delay(3_000L)
+                }
+            }
         }
     }
 
