@@ -295,6 +295,27 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
         totalSeats = FIXED_TOTAL_SEATS,
         remainingSeats = remainingSeats.coerceIn(0, FIXED_TOTAL_SEATS)
     )
+    // timetableId가 있으면 per-timetable 좌석 상태 맵을 우선 확인 (동시 여러 버스 지원)
+    val tid = timetableId
+    if (tid != null) {
+        val seatState = driverViewModel.seatStateByTimetableId[tid]
+        if (seatState != null && seatState.status != "WAITING") {
+            val currentPassengers = seatState.currentSeats.coerceIn(0, seatState.totalSeats)
+            val liveLocation = when (seatState.status) {
+                "RUNNING" -> "운행 중입니다"
+                "DONE" -> "운행이 종료되었습니다"
+                else -> currentLocation
+            }
+            return normalized.copy(
+                totalSeats = seatState.totalSeats,
+                remainingSeats = (seatState.totalSeats - currentPassengers).coerceIn(0, seatState.totalSeats),
+                currentLocation = liveLocation,
+                hasSeatInfo = true,
+                seatInfoSource = "local-driver-state"
+            )
+        }
+    }
+    // fallback: selectedRoute 단일 비교 (timetableId 없는 구형 호환)
     val route = driverViewModel.selectedRoute ?: return normalized
     val sameTimetable = route.timetableId != null && timetableId != null && route.timetableId == timetableId
     val sameLegacyRoute = route.timetableId == null && timetableId == null &&

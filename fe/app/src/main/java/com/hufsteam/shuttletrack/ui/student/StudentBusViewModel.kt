@@ -213,10 +213,11 @@ class StudentBusRepository(
     }
 
     suspend fun loadRouteDetail(schedule: BusSchedule): RouteDetail {
-        val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+        val timetableId = schedule.timetableId ?: schedule.id.toLong()
+        val busStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
         val isRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
         val liveEta = if (isRunning) {
-            shuttleRepository.getLiveEta(schedule.id.toLong()).getOrNull()
+            shuttleRepository.getLiveEta(timetableId).getOrNull()
         } else {
             null
         }
@@ -232,10 +233,11 @@ class StudentBusRepository(
     }
 
     fun subscribeRouteDetail(schedule: BusSchedule) = flow {
+        val timetableId = schedule.timetableId ?: schedule.id.toLong()
         emit(loadRouteDetail(schedule))
-        shuttleRepository.subscribeLiveEta(schedule.id.toLong())
+        shuttleRepository.subscribeLiveEta(timetableId)
             .collect { liveEta ->
-                val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+                val busStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
                 val driverLocation = busStatus?.busId?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
                 emit(routeDetailFromApi(schedule, liveEta, busStatus, driverLocation))
             }
@@ -287,7 +289,7 @@ class StudentBusRepository(
     }
 
     private suspend fun BusSchedule.withLatestSeatStatus(): BusSchedule {
-        val statusResult = shuttleRepository.getBusStatuses(id.toLong())
+        val statusResult = shuttleRepository.getBusStatuses(timetableId ?: id.toLong())
         val busStatus = statusResult.getOrNull()
         if (busStatus == null) {
             logSeatDisplay(
@@ -633,6 +635,24 @@ class StudentBusRepository(
                 joined.contains("판교") || joined.contains("경기광주") || joined.contains("외대(글)") -> "교외"
             else -> "미분류"
         }
+    }
+}
+
+private fun logSeatDisplay(
+    schedule: BusSchedule,
+    totalSeats: Int,
+    currentSeats: Int?,
+    displayRemainingSeats: Int?,
+    source: String,
+    error: Throwable? = null
+) {
+    val msg = "SeatDisplay id=${schedule.id} timetableId=${schedule.timetableId} " +
+        "route=${schedule.routeName} total=$totalSeats current=$currentSeats " +
+        "remaining=$displayRemainingSeats source=$source"
+    if (error != null) {
+        Log.e(SEAT_DISPLAY_LOG_TAG, msg, error)
+    } else {
+        Log.i(SEAT_DISPLAY_LOG_TAG, msg)
     }
 }
 
