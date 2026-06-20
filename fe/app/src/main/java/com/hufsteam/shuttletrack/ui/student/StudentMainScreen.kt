@@ -2141,9 +2141,9 @@ private fun AdminPassengerControlSection(
         }
     }
 
-    MyPageSectionHeader("탑승 수 수기 집계")
+    MyPageSectionHeader("탑승 현황 모니터링")
     Text(
-        "NFC 장비 입력을 대체하는 관리자용 수기 집계입니다.",
+        "기사 앱에서 승차/하차 버튼을 누르면 실시간으로 반영됩니다.",
         fontSize = 12.sp,
         color = Color(0xFF777777)
     )
@@ -2269,39 +2269,6 @@ private fun AdminPassengerControlSection(
             ) {
                 AdminSeatMetric("현재 탑승", "${passengers}/${totalSeats}")
                 AdminSeatMetric("잔여 좌석", "${remainingSeats}석")
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                AdminPassengerButton(
-                    text = "하차 -",
-                    enabled = isOperating && passengers > 0,
-                    filled = false,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        driverViewModel.decreasePassengers()
-                        onNotice("하차 요청을 서버에 전송했습니다")
-                    }
-                )
-                AdminPassengerButton(
-                    text = "탑승 +",
-                    enabled = isOperating && passengers < totalSeats,
-                    filled = true,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        driverViewModel.increasePassengers()
-                        onNotice("탑승 요청을 서버에 전송했습니다")
-                    }
-                )
-            }
-
-            if (!isOperating) {
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "기사가 출발 등록을 누른 뒤 수기 집계가 활성화됩니다.",
-                    fontSize = 12.sp,
-                    color = Color(0xFF999999)
-                )
             }
 
             Spacer(Modifier.height(12.dp))

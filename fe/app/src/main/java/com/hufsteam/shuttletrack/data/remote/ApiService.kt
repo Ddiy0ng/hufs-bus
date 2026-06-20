@@ -39,6 +39,11 @@ interface ApiService {
     @PATCH("/api/timetable/{timetableId}/depart")
     suspend fun departTimetable(@Path("timetableId") timetableId: Long): JsonElement
 
+    @PATCH("/api/timetable/{timetableId}/finish")
+    suspend fun finishTimetable(
+        @Path("timetableId") timetableId: Long
+    ): JsonElement
+
     @POST("/api/buses/{timetableId}/tags")
     suspend fun postBusTag(
         @Path("timetableId") timetableId: Long,
