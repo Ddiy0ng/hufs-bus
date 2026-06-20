@@ -9,6 +9,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
 import android.os.Looper
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -43,6 +44,7 @@ import kotlin.coroutines.resume
 
 private val DriverAccentRed = Color(0xFFB83A25)
 private val DriverSoftGray = Color(0xFFF4F6F8)
+private const val TAG_GPS_SCREEN = "GPS"
 
 // ── 메인 화면 ─────────────────────────────────────────────────
 
@@ -96,9 +98,8 @@ fun DriverOperationScreen(
             driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
             scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
         } else {
-            // 권한 없어도 출발 등록 진행 (GPS 없이)
-            driverViewModel.updateOperationMessage("위치 권한 없음 — GPS 없이 출발 등록합니다")
-            scope.launch { driverViewModel.startOperation(null, null) }
+            // 권한 거부 — GPS 비활성 상태로 출발 등록 (ViewModel이 메시지 설정)
+            scope.launch { driverViewModel.startOperation(null, null, permissionGranted = false) }
         }
     }
 
@@ -557,27 +558,20 @@ private suspend fun startOperationWithCurrentLocation(
     context: Context,
     driverViewModel: DriverViewModel
 ) {
-    driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
-
     if (!hasLocationPermission(context)) {
-        // GPS 권한 없어도 출발 등록 진행 — GPS 전송만 생략
-        driverViewModel.updateOperationMessage("위치 권한 없음 — GPS 없이 출발 등록합니다")
-        driverViewModel.startOperation(null, null)
+        // 권한 없음 → GPS 비활성 상태로 출발 등록
+        Log.i(TAG_GPS_SCREEN, "[GPS] permissionGranted=false providerEnabled=N/A")
+        driverViewModel.startOperation(null, null, permissionGranted = false)
         return
     }
-    if (!hasEnabledLocationProvider(context)) {
-        // GPS 꺼져 있어도 출발 등록 진행
-        driverViewModel.updateOperationMessage("위치 서비스 꺼짐 — GPS 없이 출발 등록합니다")
-        driverViewModel.startOperation(null, null)
-        return
-    }
+
+    // 권한 있음 — 프로바이더 상태 로그 후 좌표 획득 시도
+    val providerEnabled = hasEnabledLocationProvider(context)
+    Log.i(TAG_GPS_SCREEN, "[GPS] permissionGranted=true providerEnabled=$providerEnabled")
 
     val location = readCurrentLocation(context)
-    if (location == null) {
-        // GPS 위치 못 받아도 출발 등록 진행 — 5초마다 백그라운드에서 재시도
-        driverViewModel.updateOperationMessage("GPS 위치 없음 — GPS 없이 출발 등록합니다")
-    }
-    driverViewModel.startOperation(location?.latitude, location?.longitude)
+    // 좌표 null이어도 권한은 있으므로 permissionGranted=true → isGpsTracking 유지, 5초 주기 재시도
+    driverViewModel.startOperation(location?.latitude, location?.longitude, permissionGranted = true)
 }
 
 private fun hasEnabledLocationProvider(context: Context): Boolean {

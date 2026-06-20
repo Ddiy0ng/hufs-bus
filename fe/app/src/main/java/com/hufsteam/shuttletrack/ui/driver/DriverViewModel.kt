@@ -399,7 +399,7 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
 
 // ── 출발 등록 / 운행 종료 ──────────────────────────────────
 
-    fun startOperation(latitude: Double? = null, longitude: Double? = null) {
+    fun startOperation(latitude: Double? = null, longitude: Double? = null, permissionGranted: Boolean = true) {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val route = selectedRoute ?: run {
             operationMessage = "선택된 노선이 없습니다"
@@ -504,36 +504,57 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
             prefs.edit().remove("finished_$timetableId").apply()
 
             operationState = OperationState.OPERATING
-            isGpsTracking = hasBusId
             actualDepartureTime = depart?.actualDepartureTime?.take(5) ?: now
 
-            if (busId != null && latitude != null && longitude != null) {
-                lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
-                operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
+            // GPS 활성 여부: 권한 없음 또는 busId 없으면 비활성
+            isGpsTracking = permissionGranted && hasBusId
 
-                shuttleRepository.postDriverLocation(
-                    busId = busId,
-                    latitude = latitude,
-                    longitude = longitude
-                ).onSuccess {
-                    operationMessage = "GPS 위치가 서버에 전송되었습니다"
-                    Log.i(
-                        TAG_GPS,
-                        "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200"
-                    )
-                }.onFailure { throwable ->
-                    operationMessage = "GPS 전송 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
-                    Log.e(
-                        TAG_GPS,
-                        "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}",
-                        throwable
-                    )
+            Log.i(
+                TAG_GPS,
+                "[GPS] permissionGranted=$permissionGranted hasBusId=$hasBusId " +
+                "initialLatitude=$latitude initialLongitude=$longitude isGpsTracking=$isGpsTracking"
+            )
+
+            when {
+                !permissionGranted -> {
+                    // 위치 권한 없음 → GPS 비활성
+                    operationMessage = "출발 등록 완료. 위치 권한이 없어 GPS 전송은 비활성화되었습니다."
+                    Log.w(TAG_GPS, "startOperation: permission denied, GPS disabled. timetableId=$timetableId")
                 }
-            } else if (busId != null) {
-                operationMessage = "출발 등록 완료 (GPS 좌표 없음, 5초 후 백그라운드 전송 재시도)"
-                Log.w(TAG_GPS, "startOperation: no GPS coords, will retry via periodic update. timetableId=$timetableId busId=$busId")
-            } else {
-                operationMessage = "출발 등록 완료 (busId 없음, GPS 비활성)"
+                !hasBusId -> {
+                    // busId 없음 → GPS 보류
+                    operationMessage = "출발 등록 완료. busId가 없어 GPS 전송을 보류합니다."
+                    Log.w(TAG_GPS, "startOperation: busId null, GPS disabled. timetableId=$timetableId")
+                }
+                latitude != null && longitude != null -> {
+                    // 권한 + busId + 좌표 모두 있음 → 즉시 전송
+                    lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+                    operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
+
+                    shuttleRepository.postDriverLocation(
+                        busId = busId!!,
+                        latitude = latitude,
+                        longitude = longitude
+                    ).onSuccess {
+                        operationMessage = "GPS 위치가 서버에 전송되었습니다"
+                        Log.i(
+                            TAG_GPS,
+                            "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200"
+                        )
+                    }.onFailure { throwable ->
+                        operationMessage = "GPS 전송 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
+                        Log.e(
+                            TAG_GPS,
+                            "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}",
+                            throwable
+                        )
+                    }
+                }
+                else -> {
+                    // 권한 + busId 있음, 좌표만 일시적으로 없음 → 5초 주기 재시도
+                    operationMessage = "출발 등록 완료. GPS 위치 확인 즉시 전송됩니다."
+                    Log.w(TAG_GPS, "startOperation: permission granted, busId=$busId but no coords yet, will retry. timetableId=$timetableId")
+                }
             }
 
         }
