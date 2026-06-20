@@ -156,6 +156,20 @@ class StudentBusViewModel(
         }
     }
 
+    fun refreshSeatStatuses() {
+        val off = uiState.offCampusSchedules
+        val on = uiState.onCampusSchedules
+        if (off.isEmpty() && on.isEmpty()) return
+        viewModelScope.launch {
+            val updatedOff = repository.loadSeatStatuses(off)
+            val updatedOn = repository.loadSeatStatuses(on)
+            uiState = uiState.copy(
+                offCampusSchedules = updatedOff,
+                onCampusSchedules = updatedOn
+            )
+        }
+    }
+
     fun clearError() {
         uiState = uiState.copy(errorMessage = null)
     }
@@ -283,6 +297,9 @@ class StudentBusRepository(
             seatInfoSource = "pending"
         )
     }
+
+    suspend fun loadSeatStatuses(schedules: List<BusSchedule>): List<BusSchedule> =
+        schedules.withSeatStatuses()
 
     private suspend fun List<BusSchedule>.withSeatStatuses(): List<BusSchedule> {
         return map { schedule -> schedule.withLatestSeatStatus() }

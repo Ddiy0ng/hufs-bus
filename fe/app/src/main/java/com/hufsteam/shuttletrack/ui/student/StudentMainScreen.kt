@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hufsteam.shuttletrack.data.remote.ShuttleApiClient
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
+import com.hufsteam.shuttletrack.service.NotificationScheduler
+import com.hufsteam.shuttletrack.service.ScheduledNotification
 import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.data.model.UserRole
@@ -149,6 +151,7 @@ fun StudentMainScreen(
     driverViewModel: DriverViewModel,
     studentBusViewModel: StudentBusViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
+    val context = LocalContext.current
     val studentUiState = studentBusViewModel.uiState
     val baseOffCampusSchedules = studentUiState.offCampusSchedules
     val baseOnCampusSchedules = studentUiState.onCampusSchedules
@@ -163,6 +166,29 @@ fun StudentMainScreen(
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
     val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
     val liveRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule).withSeatText(liveSelectedSchedule)
+
+    // 즐겨찾기 변경 시 출발 알림 재스케줄링
+    LaunchedEffect(studentUiState.favoriteSchedules) {
+        val notifications = studentUiState.favoriteSchedules.map { fav ->
+            ScheduledNotification(
+                scheduleId = fav.schedule.id,
+                routeName = fav.schedule.routeName,
+                departureTime = fav.schedule.departureTime,
+                days = fav.days
+            )
+        }
+        NotificationScheduler.scheduleFavoriteNotifications(context, notifications)
+    }
+
+    // 시간표/즐겨찾기 화면에서 15초마다 여석 자동 갱신
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == StudentScreen.TIMETABLE || currentScreen == StudentScreen.FAVORITES) {
+            while (true) {
+                delay(15_000)
+                studentBusViewModel.refreshSeatStatuses()
+            }
+        }
+    }
 
     LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
