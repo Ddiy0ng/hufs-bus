@@ -511,7 +511,6 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
 
-            refreshPassengerStateFromServer(showMessage = false)
         }
     }
 
@@ -584,8 +583,6 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                     val passengers = response?.currentSeats
                         ?: response?.currentPassengers
                         ?: response?.passengerCount
-                        ?: response?.remainingSeats?.let { total - it }
-                        ?: response?.availableSeats?.let { total - it }
 
                     if (passengers != null) {
                         passengerCount = passengers.coerceIn(0, total)
@@ -770,7 +767,6 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                                 ?: seatResponse?.currentPassengers
                                 ?: seatResponse?.passengerCount
                                 ?: response?.currentSeats
-                                ?: response?.remainingSeats?.let { total - it }
 
                             if (current != null) {
                                 passengerCount = current.coerceIn(0, total)
