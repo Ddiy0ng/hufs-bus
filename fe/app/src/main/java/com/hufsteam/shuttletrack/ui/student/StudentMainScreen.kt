@@ -125,9 +125,6 @@ private val ShuttleRegularTextStyle = TextStyle(
     lineHeight = 16.sp,
     letterSpacing = 0.sp
 )
-private val offCampusSchedules = mockOffCampusSchedules
-private val onCampusSchedules = mockOnCampusSchedules
-
 private val offCampusRoutes = listOf(
     "판교역 → 외대(글)",
     "외대(글) → 판교역",
@@ -162,10 +159,8 @@ fun StudentMainScreen(
     }
     var currentScreen by remember { mutableStateOf(StudentScreen.TIMETABLE) }
     var selectedTab by remember { mutableStateOf(StudentTab.TIMETABLE) }
-    var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.firstOrNull() ?: offCampusSchedules.first()) }
+    var selectedSchedule by remember { mutableStateOf<BusSchedule?>(liveOffCampusSchedules.firstOrNull()) }
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
-    val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
-    val liveRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule).withSeatText(liveSelectedSchedule)
 
     // 즐겨찾기 변경 시 출발 알림 재스케줄링
     LaunchedEffect(studentUiState.favoriteSchedules) {
@@ -192,14 +187,15 @@ fun StudentMainScreen(
 
     LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
-        if (allSchedules.isNotEmpty() && allSchedules.none { it.id == selectedSchedule.id }) {
+        if (allSchedules.isNotEmpty() && allSchedules.none { it.id == selectedSchedule?.id }) {
             selectedSchedule = allSchedules.first()
         }
     }
 
-    DisposableEffect(currentScreen, selectedSchedule.id) {
-        if (currentScreen == StudentScreen.ROUTE_STATUS) {
-            studentBusViewModel.startRouteStatusUpdates(selectedSchedule)
+    DisposableEffect(currentScreen, selectedSchedule?.id) {
+        val schedule = selectedSchedule
+        if (currentScreen == StudentScreen.ROUTE_STATUS && schedule != null) {
+            studentBusViewModel.startRouteStatusUpdates(schedule)
         } else {
             studentBusViewModel.stopRouteStatusUpdates()
         }
@@ -254,19 +250,27 @@ fun StudentMainScreen(
                     }
                 )
 
-                StudentScreen.ROUTE_STATUS -> StudentRouteStatusContent(
-                    schedule = liveSelectedSchedule,
-                    routeDetail = liveRouteDetail,
-                    isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
-                    onRefresh = {
-                        studentBusViewModel.refreshAll(selectedSchedule)
-                    },
-                    onBackClick = {
-                        currentScreen = StudentScreen.TIMETABLE
-                        selectedTab = StudentTab.TIMETABLE
-                    },
-                    onFavoriteClick = { favoriteTarget = liveSelectedSchedule }
-                )
+                StudentScreen.ROUTE_STATUS -> {
+                    val currentSchedule = selectedSchedule
+                    if (currentSchedule != null) {
+                        val liveSelectedSchedule = currentSchedule.withLivePassengerState(driverViewModel)
+                        val liveRouteDetail = studentUiState.selectedRouteDetail
+                            ?: emptyRouteDetail(liveSelectedSchedule)
+                        StudentRouteStatusContent(
+                            schedule = liveSelectedSchedule,
+                            routeDetail = liveRouteDetail,
+                            isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
+                            onRefresh = {
+                                studentBusViewModel.refreshAll(currentSchedule)
+                            },
+                            onBackClick = {
+                                currentScreen = StudentScreen.TIMETABLE
+                                selectedTab = StudentTab.TIMETABLE
+                            },
+                            onFavoriteClick = { favoriteTarget = liveSelectedSchedule }
+                        )
+                    }
+                }
 
                 StudentScreen.FAVORITES -> StudentFavoritesContent(
                     favorites = favoriteSchedules,
@@ -364,9 +368,7 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
 }
 
 private fun BusSchedule.toDriverRoute(): DriverRoute {
-    val stops = routeStops
-        .ifEmpty { mockRouteDetailFor(this).stops }
-        .map { it.replace("\n", " ") }
+    val stops = routeStops.map { it.replace("\n", " ") }
 
     return DriverRoute(
         id = "timetable_$id",
@@ -383,6 +385,29 @@ private fun RouteDetail.withSeatText(schedule: BusSchedule): RouteDetail {
     return copy(
         plannedDeparture = schedule.departureTime,
         stopInfos = stopInfos.mapValues { (_, info) -> info.copy(seatText = seatText) }
+    )
+}
+
+private fun emptyRouteDetail(schedule: BusSchedule): RouteDetail {
+    val stops = schedule.routeStops
+    val infos = stops.associate { stop ->
+        val normalized = stop.replace("\n", " ")
+        normalized to StopArrivalInfo(
+            stopName = normalized,
+            arrivalText = "현재 운행 중인 버스가 없습니다",
+            seatText = "조회 중"
+        )
+    }
+    return RouteDetail(
+        stops = stops,
+        currentStopIndex = 0,
+        busProgressIndex = 0f,
+        plannedDeparture = schedule.departureTime,
+        actualDeparture = "미정",
+        etaText = "운행 전",
+        stopInfos = infos,
+        isRunning = false,
+        statusText = "운행 전"
     )
 }
 

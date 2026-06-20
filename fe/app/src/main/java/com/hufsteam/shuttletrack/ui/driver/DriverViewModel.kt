@@ -7,8 +7,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.JsonElement
 import com.hufsteam.shuttletrack.data.remote.TokenStore
 import com.hufsteam.shuttletrack.data.remote.dto.BusTagRequest
+import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -52,32 +54,6 @@ data class SeatState(
     val remainingSeats: Int = (totalSeats - currentSeats).coerceIn(0, totalSeats)
 }
 
-// ── 목 데이터 ─────────────────────────────────────────────────
-
-val mockDriverRoutes = listOf(
-    DriverRoute(
-        id            = "route_1",
-        routeName     = "경기광주역 → 외대(글)",
-        scheduledTime = "08:30",
-        totalSeats    = 45,
-        stops         = listOf("경기광주역(기점)", "기숙사", "백년관", "인경관(종점)")
-    ),
-    DriverRoute(
-        id            = "route_2",
-        routeName     = "외대(글) → 경기광주역",
-        scheduledTime = "13:00",
-        totalSeats    = 45,
-        stops         = listOf("인경관(기점)", "백년관", "기숙사", "경기광주역(종점)")
-    ),
-    DriverRoute(
-        id            = "route_3",
-        routeName     = "판교역 → 외대(글)",
-        scheduledTime = "17:30",
-        totalSeats    = 45,
-        stops         = listOf("판교역(기점)", "성남역", "서현역", "외대-글(종점)")
-    )
-)
-
 // ── ViewModel ────────────────────────────────────────────────
 
 class DriverViewModel(
@@ -117,8 +93,44 @@ class DriverViewModel(
     var runningStateByTimetableId by mutableStateOf<Map<Long, Boolean>>(emptyMap())
         private set
 
+    var driverRoutes by mutableStateOf<List<DriverRoute>>(emptyList())
+        private set
+
+    var driverRoutesLoading by mutableStateOf(false)
+        private set
+
+    var driverRoutesError by mutableStateOf<String?>(null)
+        private set
+
     init {
         restorePersistedState()
+        loadDriverRoutes()
+    }
+
+    // ── 서버 노선 로드 ────────────────────────────────────────
+
+    fun loadDriverRoutes() {
+        viewModelScope.launch {
+            driverRoutesLoading = true
+            driverRoutesError = null
+            shuttleRepository.getTimetable(null)
+                .onSuccess { timetables ->
+                    val routes = timetables.mapIndexedNotNull { index, dto ->
+                        dto.toDriverRoute(index)
+                    }
+                    driverRoutes = routes
+                    driverRoutesLoading = false
+                    if (routes.isEmpty()) {
+                        driverRoutesError = "배정된 운행 일정이 없습니다"
+                    }
+                    Log.i(TAG_DRIVER_SCREEN, "loadDriverRoutes count=${routes.size}")
+                }
+                .onFailure { throwable ->
+                    driverRoutesLoading = false
+                    driverRoutesError = "운행 일정을 불러오지 못했습니다: ${throwable.message ?: "서버 응답 없음"}"
+                    Log.e(TAG_DRIVER_SCREEN, "loadDriverRoutes failed: ${throwable.message}")
+                }
+        }
     }
 
     // ── SharedPreferences 복원 ────────────────────────────────
@@ -572,4 +584,36 @@ private fun DriverRoute.timetableId(): Long {
 
 private fun String.digitsAsLong(): Long? {
     return filter { it.isDigit() }.takeIf { it.isNotBlank() }?.toLongOrNull()
+}
+
+private fun TimetableResponse.toDriverRoute(index: Int): DriverRoute? {
+    val tid = listOfNotNull(timetableId, specificTimetableId, id).firstOrNull() ?: return null
+    val stopNames = (routeList ?: stops)?.mapIndexedNotNull { i, el ->
+        when {
+            el.isJsonPrimitive -> el.asString
+            el.isJsonObject -> {
+                val obj = el.asJsonObject
+                listOf("name", "stopName", "busStopName")
+                    .firstNotNullOfOrNull { key ->
+                        obj.get(key)?.takeIf { it.isJsonPrimitive }?.asString
+                    } ?: "정류장${i + 1}"
+            }
+            else -> null
+        }
+    }.orEmpty()
+    val name = listOfNotNull(routeName, route)
+        .firstOrNull { it.isNotBlank() }
+        ?: listOfNotNull(startStop, endStop).filter { it.isNotBlank() }.joinToString(" → ")
+            .takeIf { it.isNotBlank() }
+        ?: "노선 ${index + 1}"
+    val scheduledTime = listOfNotNull(departureTime, departAt, this.time, plannedDeparture)
+        .firstOrNull { it.isNotBlank() } ?: "00:00"
+    return DriverRoute(
+        id = "timetable_$tid",
+        routeName = name,
+        scheduledTime = scheduledTime,
+        totalSeats = 45,
+        stops = stopNames,
+        timetableId = tid
+    )
 }
