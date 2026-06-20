@@ -264,7 +264,11 @@ class StudentBusRepository(
     private fun TimetableResponse.toSchedule(index: Int, fallback: List<BusSchedule>, defaultCampusType: String = ""): BusSchedule {
         val stopPoints = (routeList ?: stops).toStopPoints()
         val routeStops = stopPoints.map { it.name }
-        val fallbackSchedule = fallback.getOrNull(index % fallback.size)
+        val fallbackSchedule = if (fallback.isNotEmpty()) {
+            fallback.getOrNull(index % fallback.size)
+        } else {
+            null
+        }
         val fallbackRoute = if (routeStops.size >= 2) {
             "${routeStops.first().cleanStopName()} → ${routeStops.last().cleanStopName()}"
         } else {
