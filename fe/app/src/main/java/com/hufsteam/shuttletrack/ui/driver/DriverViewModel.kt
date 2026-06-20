@@ -252,8 +252,6 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                         response?.currentSeats
                             ?: response?.currentPassengers
                             ?: response?.passengerCount
-                            ?: response?.remainingSeats?.let { totalSeats - it }
-                            ?: response?.availableSeats?.let { totalSeats - it }
                             ?: passengerCount
                     } else {
                         response?.currentSeats ?: response?.currentPassengers ?: response?.passengerCount ?: 0
