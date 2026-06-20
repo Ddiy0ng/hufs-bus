@@ -308,7 +308,7 @@ class StudentBusRepository(
 
     suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>, isExisting: Boolean): Boolean {
         return shuttleRepository.saveFavorite(
-            timetableId = schedule.id.toLong(),
+            timetableId = schedule.timetableId ?: schedule.id.toLong(),
             days = days.map(::toApiDay).toSet(),
             isExisting = isExisting
         ).isSuccess
@@ -400,7 +400,8 @@ class StudentBusRepository(
             remaining = (total - currentPassengerCount).coerceIn(0, total)
         } else if (serverRemaining != null) {
             remaining = serverRemaining.coerceIn(0, total)
-            currentPassengerCount = (total - remaining).coerceIn(0, total)
+            // remainingSeats=0 → currentSeats=45 역산 금지 (서버 초기화 버그 방지)
+            currentPassengerCount = 0
         } else {
             logSeatDisplay(
                 schedule = this,
