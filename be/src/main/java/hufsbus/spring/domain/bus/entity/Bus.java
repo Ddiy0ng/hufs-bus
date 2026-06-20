@@ -1,6 +1,5 @@
 package hufsbus.spring.domain.bus.entity;
 
-import hufsbus.spring.domain.route.entity.Route;
 import hufsbus.spring.domain.timetable.entity.Timetable;
 import hufsbus.spring.global.entity.BaseEntity;
 import jakarta.persistence.*;
@@ -36,29 +35,24 @@ public class Bus extends BaseEntity {
     private BusStatus status;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "route_id")
-    private Route route;
-
-    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "timetable_id")
     private Timetable timetable;
 
     @Builder
-    public Bus(String busNumber, Integer totalSeats, Integer currentSeats, BusStatus status, Route route, Timetable timetable) {
+    public Bus(String busNumber, Integer totalSeats, Integer currentSeats, BusStatus status, Timetable timetable) {
         this.busNumber = busNumber;
         this.totalSeats = totalSeats;
         this.currentSeats = currentSeats;
         this.status = status;
-        this.route = route;
         this.timetable = timetable;
     }
 
     public void board() {
-        this.currentSeats--;
+        this.currentSeats++;
     }
 
     public void alight() {
-        this.currentSeats++;
+        this.currentSeats--;
     }
 
     public void startRunning() {
