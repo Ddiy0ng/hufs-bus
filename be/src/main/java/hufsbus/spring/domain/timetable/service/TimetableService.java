@@ -34,4 +34,17 @@ public class TimetableService {
 
         return DepartResponse.of(timetable, bus);
     }
+
+    @Transactional
+    public DepartResponse finish(Long timetableId) {
+        Timetable timetable = timetableRepository.findById(timetableId)
+                .orElseThrow(() -> new CustomException(ErrorCode.TIMETABLE_NOT_FOUND));
+
+        Bus bus = busRepository.findByTimetableId(timetableId)
+                .orElseThrow(() -> new CustomException(ErrorCode.BUS_NOT_FOUND));
+
+        bus.finish();
+
+        return DepartResponse.of(timetable, bus);
+    }
 }
