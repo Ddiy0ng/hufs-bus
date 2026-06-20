@@ -99,7 +99,8 @@ data class BusSchedule(
     val campusType: String = "미분류",
     val hasSeatInfo: Boolean = false,
     val seatInfoSource: String = "pending",
-    val runningStatus: String = "UNKNOWN"
+    val runningStatus: String = "UNKNOWN",
+    val currentPassengerCount: Int = 0
 )
 
 data class FavoriteSchedule(
@@ -341,6 +342,7 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
             return normalized.copy(
                 totalSeats = seatState.totalSeats,
                 remainingSeats = (seatState.totalSeats - currentPassengers).coerceIn(0, seatState.totalSeats),
+                currentPassengerCount = currentPassengers,
                 currentLocation = liveLocation,
                 runningStatus = seatState.status,
                 hasSeatInfo = isActuallyRunning,
@@ -369,6 +371,7 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
     }
     return normalized.copy(
         remainingSeats = (FIXED_TOTAL_SEATS - currentPassengers).coerceIn(0, FIXED_TOTAL_SEATS),
+        currentPassengerCount = currentPassengers,
         currentLocation = liveLocation,
         runningStatus = driverRunningStatus,
         hasSeatInfo = driverViewModel.operationState == OperationState.OPERATING,
@@ -670,16 +673,17 @@ private fun EmptyStateMessage(message: String) {
 @Composable
 private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
     val isRunning = schedule.runningStatus == "RUNNING"
+    val computedRemaining = (schedule.totalSeats - schedule.currentPassengerCount).coerceAtLeast(0)
     val seatLabel = when {
-        isRunning && schedule.hasSeatInfo -> "(${schedule.remainingSeats}석 남음)"
+        isRunning && schedule.hasSeatInfo -> "(탑승 ${schedule.currentPassengerCount}/${schedule.totalSeats})"
         isRunning -> "(운행 중)"
         schedule.runningStatus == "DONE" -> "(운행 종료)"
         schedule.totalSeats > 0 -> "(${schedule.totalSeats}석)"
         else -> "(좌석 정보 없음)"
     }
     val seatColor = when {
-        isRunning && schedule.hasSeatInfo && schedule.remainingSeats == 0 -> Color(0xFFE53935)
-        isRunning && schedule.hasSeatInfo && schedule.remainingSeats <= 5 -> Color(0xFFE65100)
+        isRunning && schedule.hasSeatInfo && computedRemaining == 0 -> Color(0xFFE53935)
+        isRunning && schedule.hasSeatInfo && computedRemaining <= 5 -> Color(0xFFE65100)
         isRunning -> NavyBlue
         else -> Color(0xFF9AA0A6)
     }
@@ -1303,16 +1307,17 @@ private fun StudentFavoritesContent(
                                 ) {
                                     val favSched = favorite.schedule
                                     val favIsRunning = favSched.runningStatus == "RUNNING"
+                                    val favComputedRemaining = (favSched.totalSeats - favSched.currentPassengerCount).coerceAtLeast(0)
                                     val favoriteSeatLabel = when {
-                                        favIsRunning && favSched.hasSeatInfo -> "(${favSched.remainingSeats}석 남음)"
+                                        favIsRunning && favSched.hasSeatInfo -> "(탑승 ${favSched.currentPassengerCount}/${favSched.totalSeats})"
                                         favIsRunning -> "(운행 중)"
                                         favSched.runningStatus == "DONE" -> "(운행 종료)"
                                         favSched.totalSeats > 0 -> "(${favSched.totalSeats}석)"
                                         else -> "(좌석 정보 없음)"
                                     }
                                     val favoriteSeatColor = when {
-                                        favIsRunning && favSched.hasSeatInfo && favSched.remainingSeats == 0 -> Color(0xFFE53935)
-                                        favIsRunning && favSched.hasSeatInfo && favSched.remainingSeats <= 5 -> Color(0xFFE65100)
+                                        favIsRunning && favSched.hasSeatInfo && favComputedRemaining == 0 -> Color(0xFFE53935)
+                                        favIsRunning && favSched.hasSeatInfo && favComputedRemaining <= 5 -> Color(0xFFE65100)
                                         favIsRunning -> NavyBlue
                                         else -> Color(0xFF9AA0A6)
                                     }
@@ -2263,7 +2268,7 @@ private fun AdminPassengerControlSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AdminSeatMetric("현재 탑승", "${passengers}/${totalSeats}")
-                AdminSeatMetric("남은 여석", "${remainingSeats}석")
+                AdminSeatMetric("잔여 좌석", "${remainingSeats}석")
             }
 
             Spacer(Modifier.height(16.dp))

@@ -55,7 +55,6 @@ fun DriverOperationScreen(
     val state = driverViewModel.operationState
     val passengers = driverViewModel.passengerCount
     val total = route.totalSeats
-    val remainingSeats = (total - passengers).coerceAtLeast(0)
     val actualTime = driverViewModel.actualDepartureTime
     val isGpsTracking = driverViewModel.isGpsTracking
     val operationMessage = driverViewModel.operationMessage
@@ -219,24 +218,22 @@ fun DriverOperationScreen(
                 // ── 출발 전 ────────────────────────────────────
                 OperationState.BEFORE_DEPARTURE -> {
                     BeforeDepartureContent(
-                        passengers  = passengers,
-                        total       = total,
-                        remainingSeats = remainingSeats,
-                        message = operationMessage
+                        passengers = passengers,
+                        total      = total,
+                        message    = operationMessage
                     )
                 }
 
                 // ── 운행 중 ────────────────────────────────────
                 OperationState.OPERATING -> {
                     OperatingContent(
-                        passengers       = passengers,
-                        total            = total,
-                        remainingSeats   = remainingSeats,
-                        isGpsTracking    = isGpsTracking,
-                        message          = operationMessage,
-                        lastGpsText      = lastGpsText,
-                        onBoard          = { driverViewModel.increasePassengers() },
-                        onAlight         = { driverViewModel.decreasePassengers() }
+                        passengers    = passengers,
+                        total         = total,
+                        isGpsTracking = isGpsTracking,
+                        message       = operationMessage,
+                        lastGpsText   = lastGpsText,
+                        onBoard       = { driverViewModel.increasePassengers() },
+                        onAlight      = { driverViewModel.decreasePassengers() }
                     )
                 }
 
@@ -244,9 +241,8 @@ fun DriverOperationScreen(
                 OperationState.COMPLETED -> {
                     CompletedContent(
                         passengers = passengers,
-                        total = total,
-                        remainingSeats = remainingSeats,
-                        message = operationMessage
+                        total      = total,
+                        message    = operationMessage
                     )
                 }
             }
@@ -311,14 +307,9 @@ fun DriverOperationScreen(
 private fun BeforeDepartureContent(
     passengers: Int,
     total: Int,
-    remainingSeats: Int,
     message: String
 ) {
-    SeatSummaryContent(
-        passengers = passengers,
-        total = total,
-        remainingSeats = remainingSeats
-    )
+    SeatSummaryContent(passengers = passengers, total = total)
     Spacer(Modifier.height(14.dp))
     OperationStatePill(message = message, isActive = false)
 }
@@ -329,7 +320,6 @@ private fun BeforeDepartureContent(
 private fun OperatingContent(
     passengers: Int,
     total: Int,
-    remainingSeats: Int,
     isGpsTracking: Boolean,
     message: String,
     lastGpsText: String?,
@@ -349,11 +339,7 @@ private fun OperatingContent(
 
     Spacer(Modifier.height(18.dp))
 
-    SeatSummaryContent(
-        passengers = passengers,
-        total = total,
-        remainingSeats = remainingSeats
-    )
+    SeatSummaryContent(passengers = passengers, total = total)
 
     Spacer(Modifier.height(24.dp))
 
@@ -414,13 +400,9 @@ private fun OperatingContent(
 // ── 운행 완료 콘텐츠 ────────────────────────────────────────────
 
 @Composable
-private fun CompletedContent(passengers: Int, total: Int, remainingSeats: Int, message: String) {
+private fun CompletedContent(passengers: Int, total: Int, message: String) {
     Spacer(Modifier.height(16.dp))
-    SeatSummaryContent(
-        passengers = passengers,
-        total = total,
-        remainingSeats = remainingSeats
-    )
+    SeatSummaryContent(passengers = passengers, total = total)
     Spacer(Modifier.height(18.dp))
     OperationStatePill(message = message, isActive = false)
     Spacer(Modifier.height(18.dp))
@@ -433,11 +415,7 @@ private fun CompletedContent(passengers: Int, total: Int, remainingSeats: Int, m
 }
 
 @Composable
-private fun SeatSummaryContent(
-    passengers: Int,
-    total: Int,
-    remainingSeats: Int
-) {
+private fun SeatSummaryContent(passengers: Int, total: Int) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             "탑승 수",
@@ -453,21 +431,6 @@ private fun SeatSummaryContent(
             color = DriverAccentRed,
             lineHeight = 48.sp
         )
-        Spacer(Modifier.height(12.dp))
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(50.dp))
-                .background(DriverSoftGray)
-                .padding(horizontal = 18.dp, vertical = 7.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                "남은 여석 ${remainingSeats}석",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = NavyBlue
-            )
-        }
     }
 }
 

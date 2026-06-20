@@ -316,6 +316,7 @@ class DriverViewModel(
         isGpsTracking = true
         lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
         operationMessage = "출발 등록 및 GPS 전송 중입니다"
+        Log.d(TAG_DRIVER_SCREEN, "운행 시작, passengerCount=$passengerCount timetableId=$timetableId")
 
         viewModelScope.launch {
             var departBusId: Long? = null
@@ -516,6 +517,7 @@ class DriverViewModel(
         Log.i(TAG_TAG_API,
             "timetableId=$timetableId type=$type currentRole=$role currentEmail=$email " +
             "hasAccessToken=${!token.isNullOrBlank()} requestUrl=/api/buses/$timetableId/tags")
+        Log.d(TAG_DRIVER_SCREEN, "click $type: passengerCount 변경 전=$passengerCount")
 
         if (token.isNullOrBlank()) {
             operationMessage = "로그인이 만료되었습니다. 다시 로그인해주세요."
@@ -545,6 +547,7 @@ class DriverViewModel(
                             if (current != null) {
                                 passengerCount = current.coerceIn(0, total)
                             }
+                            Log.d(TAG_DRIVER_SCREEN, "click $type: passengerCount 변경 후=$passengerCount (GPS 전송은 별도, 좌석 수에 영향 없음)")
                             val busId = seatResponse?.busId ?: response?.busId ?: route.busId
                             selectedRoute = route.copy(totalSeats = total, busId = busId)
                             busId?.let {

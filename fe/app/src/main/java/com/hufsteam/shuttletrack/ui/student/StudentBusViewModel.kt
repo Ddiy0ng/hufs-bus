@@ -333,14 +333,17 @@ class StudentBusRepository(
             )
         }
 
-        // 운행 중: 여석 계산 (1순위: 서버 remainingSeats, 2순위: currentSeats 계산)
+        // 운행 중: 탑승 인원 계산 (1순위: currentSeats, 2순위: totalSeats - remainingSeats)
         val serverRemaining = firstInt(busStatus.remainingSeats, busStatus.availableSeats)
         val current = firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
+        val currentPassengerCount: Int
         val remaining: Int
-        if (serverRemaining != null) {
+        if (current != null) {
+            currentPassengerCount = current.coerceIn(0, total)
+            remaining = (total - currentPassengerCount).coerceIn(0, total)
+        } else if (serverRemaining != null) {
             remaining = serverRemaining.coerceIn(0, total)
-        } else if (current != null) {
-            remaining = (total - current).coerceIn(0, total)
+            currentPassengerCount = (total - remaining).coerceIn(0, total)
         } else {
             logSeatDisplay(
                 schedule = this,
@@ -368,6 +371,7 @@ class StudentBusRepository(
         return copy(
             totalSeats = total,
             remainingSeats = remaining,
+            currentPassengerCount = currentPassengerCount,
             runningStatus = "RUNNING",
             currentLocation = locationText,
             hasSeatInfo = true,
