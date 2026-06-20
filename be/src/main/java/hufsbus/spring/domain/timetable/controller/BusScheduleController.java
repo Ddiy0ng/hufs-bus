@@ -2,6 +2,7 @@ package hufsbus.spring.domain.timetable.controller;
 
 import hufsbus.spring.domain.timetable.dto.BusRouteResponseDto;
 import hufsbus.spring.domain.timetable.dto.TimetableResponseDto;
+import hufsbus.spring.domain.timetable.dto.TimetableUploadResponse;
 import hufsbus.spring.domain.timetable.service.BusScheduleService;
 import hufsbus.spring.global.dto.ApiResponseDto;
 import lombok.RequiredArgsConstructor;
@@ -22,13 +23,12 @@ public class BusScheduleController {
 
 
     @PostMapping("/timetable")
-    public ResponseEntity<ApiResponseDto<Void>> createTimetable(@RequestParam(value = "file") MultipartFile multipartFile) {
+    public ResponseEntity<ApiResponseDto<TimetableUploadResponse>> createTimetable(@RequestParam(value = "file") MultipartFile multipartFile) {
 
         synchronized (timetableUploadLock) {
-            busScheduleService.createTimetables(multipartFile);
+            TimetableUploadResponse response = busScheduleService.createTimetables(multipartFile);
+            return ResponseEntity.ok(ApiResponseDto.of(response, "시간표를 성공적으로 업로드했습니다."));
         }
-
-        return ResponseEntity.ok(ApiResponseDto.success("시간표를 성공적으로 업로드했습니다."));
     }
 
     @GetMapping("/inoutcampus")

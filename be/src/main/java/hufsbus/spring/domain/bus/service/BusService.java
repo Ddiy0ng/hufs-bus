@@ -3,8 +3,10 @@ package hufsbus.spring.domain.bus.service;
 import hufsbus.spring.domain.bus.dto.BusResponse;
 import hufsbus.spring.domain.bus.dto.BusTagRequest;
 import hufsbus.spring.domain.bus.dto.BusTagResponse;
+import hufsbus.spring.domain.bus.dto.SeatUpdateEvent;
 import hufsbus.spring.domain.bus.entity.Bus;
 import hufsbus.spring.domain.bus.repository.BusRepository;
+import hufsbus.spring.domain.timetable.service.SseEmitterService;
 import hufsbus.spring.global.exception.CustomException;
 import hufsbus.spring.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class BusService {
     private final BusRepository busRepository;
+    private final SseEmitterService sseEmitterService;
 
     public BusResponse getSeats(Long timetableId) {
         Bus bus = busRepository.findByTimetableId(timetableId)
@@ -39,6 +42,8 @@ public class BusService {
             }
             bus.alight();
         }
+
+        sseEmitterService.broadcast(timetableId, "seat-update", SeatUpdateEvent.of(timetableId, bus, request.getType()));
 
         return BusTagResponse.of(bus, request.getType());
     }
