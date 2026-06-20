@@ -7,7 +7,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.gson.JsonElement
 import com.hufsteam.shuttletrack.data.remote.TokenStore
 import com.hufsteam.shuttletrack.data.remote.dto.BusTagRequest
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
@@ -58,6 +57,7 @@ data class SeatState(
 
 class DriverViewModel(application: Application) : AndroidViewModel(application) {
 
+
     private val shuttleRepository = ShuttleRepository()
     private val prefs = application.getSharedPreferences(PREFS_DRIVER_OPS, android.content.Context.MODE_PRIVATE)
 
@@ -105,96 +105,117 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         loadDriverRoutes()
     }
 
-    // ── 서버 노선 로드 ────────────────────────────────────────
+// ── 서버 노선 로드 ────────────────────────────────────────
 
     fun loadDriverRoutes() {
         viewModelScope.launch {
             driverRoutesLoading = true
             driverRoutesError = null
+
             shuttleRepository.getTimetable(null)
                 .onSuccess { timetables ->
                     val routes = timetables.mapIndexedNotNull { index, dto ->
                         dto.toDriverRoute(index)
                     }
+
                     driverRoutes = routes
                     driverRoutesLoading = false
+
                     if (routes.isEmpty()) {
                         driverRoutesError = "배정된 운행 일정이 없습니다"
                     }
+
                     Log.i(TAG_DRIVER_SCREEN, "loadDriverRoutes count=${routes.size}")
                 }
                 .onFailure { throwable ->
                     driverRoutesLoading = false
                     driverRoutesError = "운행 일정을 불러오지 못했습니다: ${throwable.message ?: "서버 응답 없음"}"
-                    Log.e(TAG_DRIVER_SCREEN, "loadDriverRoutes failed: ${throwable.message}")
+                    Log.e(TAG_DRIVER_SCREEN, "loadDriverRoutes failed: ${throwable.message}", throwable)
                 }
         }
     }
 
-    // ── SharedPreferences 복원 ────────────────────────────────
+// ── SharedPreferences 복원 ────────────────────────────────
 
     private fun restorePersistedState() {
         val all = prefs.all
+
         val restoredBusIds = all.entries
             .filter { it.key.startsWith("busId_") }
-            .mapNotNull { (k, v) ->
-                val tid = k.removePrefix("busId_").toLongOrNull() ?: return@mapNotNull null
-                val bid = when (v) {
-                    is Long -> v
-                    is Int -> v.toLong()
+            .mapNotNull { (key, value) ->
+                val timetableId = key.removePrefix("busId_").toLongOrNull() ?: return@mapNotNull null
+                val busId = when (value) {
+                    is Long -> value
+                    is Int -> value.toLong()
                     else -> return@mapNotNull null
                 }
-                tid to bid
-            }.toMap()
+                timetableId to busId
+            }
+            .toMap()
 
         val restoredRunning = all.entries
             .filter { it.key.startsWith("running_") }
-            .mapNotNull { (k, v) ->
-                val tid = k.removePrefix("running_").toLongOrNull() ?: return@mapNotNull null
-                tid to (v as? Boolean ?: false)
-            }.toMap()
+            .mapNotNull { (key, value) ->
+                val timetableId = key.removePrefix("running_").toLongOrNull() ?: return@mapNotNull null
+                timetableId to (value as? Boolean ?: false)
+            }
+            .toMap()
 
-        if (restoredBusIds.isNotEmpty()) activeBusIdsByTimetableId = restoredBusIds
-        if (restoredRunning.isNotEmpty()) runningStateByTimetableId = restoredRunning
+        if (restoredBusIds.isNotEmpty()) {
+            activeBusIdsByTimetableId = restoredBusIds
+        }
+
+        if (restoredRunning.isNotEmpty()) {
+            runningStateByTimetableId = restoredRunning
+        }
     }
 
     private fun persistRunningState(timetableId: Long, isRunning: Boolean, busId: Long?) {
-        prefs.edit()
-            .putBoolean("running_$timetableId", isRunning)
-            .apply()
-        if (busId != null) {
-            prefs.edit().putLong("busId_$timetableId", busId).apply()
-        }
+        prefs.edit().apply {
+            putBoolean("running_$timetableId", isRunning)
+
+            if (busId != null) {
+                putLong("busId_$timetableId", busId)
+            } else {
+                remove("busId_$timetableId")
+            }
+        }.apply()
     }
 
-    // ── 노선 선택 ─────────────────────────────────────────────
+// ── 노선 선택 ─────────────────────────────────────────────
 
     fun selectRoute(route: DriverRoute) {
-        val tid = route.timetableId()
-        val isAlreadyRunning = runningStateByTimetableId[tid] == true
-        Log.i(TAG_DRIVER_SCREEN,
-            "selectRoute timetableId=$tid routeName=${route.routeName} " +
-            "isAlreadyRunning=$isAlreadyRunning")
+        val timetableId = route.timetableId()
+        val isAlreadyRunning = runningStateByTimetableId[timetableId] == true
+
+        Log.i(
+            TAG_DRIVER_SCREEN,
+            "selectRoute timetableId=$timetableId routeName=${route.routeName} isAlreadyRunning=$isAlreadyRunning"
+        )
+
+        selectedRoute = if (isAlreadyRunning) {
+            val savedBusId = activeBusIdsByTimetableId[timetableId] ?: route.busId
+            if (savedBusId != null) route.copy(busId = savedBusId) else route
+        } else {
+            route
+        }
 
         if (isAlreadyRunning) {
-            // 이미 운행 중이면 상태 초기화하지 않고 복원
-            val savedBusId = activeBusIdsByTimetableId[tid] ?: route.busId
-            selectedRoute = if (savedBusId != null) route.copy(busId = savedBusId) else route
-            val seat = seatStateByTimetableId[tid]
+            operationState = OperationState.OPERATING
+            isGpsTracking = true
+
+            val seat = seatStateByTimetableId[timetableId]
             if (seat != null) {
-                operationState = OperationState.OPERATING
                 passengerCount = seat.currentSeats.coerceIn(0, seat.totalSeats)
-                isGpsTracking = true
                 operationMessage = "운행 중 상태입니다"
             } else {
-                operationState = OperationState.OPERATING
-                isGpsTracking = true
                 operationMessage = "운행 중 상태입니다 (여석 조회 중)"
             }
         } else {
-            selectedRoute = route
             reset()
         }
+
+        restoreStateFromServer(timetableId)
     }
 
     fun clearSelectedRoute() {
@@ -202,76 +223,104 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         reset()
     }
 
-    // ── 서버 상태 복원 ────────────────────────────────────────
+// ── 서버 상태 복원 ────────────────────────────────────────
 
     fun restoreStateFromServer(timetableId: Long) {
         val savedBusId = activeBusIdsByTimetableId[timetableId]
-        Log.i(TAG_DRIVER_SCREEN,
-            "enter timetableId=$timetableId saved busId=$savedBusId " +
-            "saved runningState=${runningStateByTimetableId[timetableId]}")
+
+        Log.i(
+            TAG_DRIVER_SCREEN,
+            "enter timetableId=$timetableId saved busId=$savedBusId saved runningState=${runningStateByTimetableId[timetableId]}"
+        )
 
         viewModelScope.launch {
             shuttleRepository.getBusStatuses(timetableId)
                 .onSuccess { response ->
                     val status = response?.status?.trim()?.uppercase() ?: "UNKNOWN"
                     val busId = response?.busId
+                    val totalSeats = response?.totalSeats ?: selectedRoute?.totalSeats ?: 45
                     val currentSeats = response?.currentSeats
                         ?: response?.currentPassengers
                         ?: response?.passengerCount
-                    val totalSeats = response?.totalSeats
-                        ?: selectedRoute?.totalSeats
-                        ?: 45
-                    val remaining = currentSeats?.let { (totalSeats - it).coerceIn(0, totalSeats) }
+                        ?: response?.remainingSeats?.let { totalSeats - it }
+                        ?: response?.availableSeats?.let { totalSeats - it }
+                        ?: passengerCount
 
-                    Log.i(TAG_RESTORE,
-                        "timetableId=$timetableId busId=$busId status=$status " +
-                        "currentSeats=$currentSeats totalSeats=$totalSeats remainingSeats=$remaining")
+                    val safeCurrentSeats = currentSeats.coerceIn(0, totalSeats)
+                    val remainingSeats = (totalSeats - safeCurrentSeats).coerceIn(0, totalSeats)
+
+                    Log.i(
+                        TAG_RESTORE,
+                        "timetableId=$timetableId busId=$busId status=$status currentSeats=$safeCurrentSeats totalSeats=$totalSeats remainingSeats=$remainingSeats"
+                    )
+
+                    seatStateByTimetableId = seatStateByTimetableId + (
+                            timetableId to SeatState(
+                                currentSeats = safeCurrentSeats,
+                                totalSeats = totalSeats,
+                                status = status
+                            )
+                            )
+
+                    passengerCount = safeCurrentSeats
+
+                    if (busId != null) {
+                        activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
+                        selectedRoute = selectedRoute?.copy(busId = busId, totalSeats = totalSeats)
+                    } else {
+                        selectedRoute = selectedRoute?.copy(totalSeats = totalSeats)
+                    }
 
                     when (status) {
                         "RUNNING" -> {
+                            operationState = OperationState.OPERATING
+                            isGpsTracking = true
                             runningStateByTimetableId = runningStateByTimetableId + (timetableId to true)
-                            if (operationState != OperationState.OPERATING) {
-                                operationState = OperationState.OPERATING
-                                isGpsTracking = true
-                                operationMessage = "서버에서 운행 중 상태를 복원했습니다"
-                            }
-                            if (currentSeats != null) {
-                                passengerCount = currentSeats.coerceIn(0, totalSeats)
-                            }
+                            operationMessage = "서버에서 운행 중 상태를 복원했습니다"
+
                             if (busId != null) {
-                                activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
-                                selectedRoute = selectedRoute?.copy(busId = busId)
                                 persistRunningState(timetableId, true, busId)
                             }
-                            seatStateByTimetableId = seatStateByTimetableId + (
-                                timetableId to SeatState(
-                                    currentSeats = passengerCount,
-                                    totalSeats = totalSeats,
-                                    status = "RUNNING"
-                                )
-                            )
                         }
+
                         "DONE" -> {
-                            if (operationState == OperationState.OPERATING) {
-                                operationState = OperationState.COMPLETED
-                                isGpsTracking = false
-                                operationMessage = "운행이 종료된 상태입니다"
-                            }
+                            operationState = OperationState.COMPLETED
+                            isGpsTracking = false
                             runningStateByTimetableId = runningStateByTimetableId + (timetableId to false)
+                            activeBusIdsByTimetableId = activeBusIdsByTimetableId - timetableId
+                            operationMessage = "운행이 종료된 상태입니다"
                             persistRunningState(timetableId, false, null)
                         }
+
+                        "WAITING" -> {
+                            if (runningStateByTimetableId[timetableId] != true) {
+                                operationState = OperationState.BEFORE_DEPARTURE
+                                isGpsTracking = false
+                                operationMessage = "출발 전 상태입니다"
+                            }
+                        }
+
                         else -> {
-                            // WAITING: 이미 출발 등록된 상태가 아닌 경우만 BEFORE_DEPARTURE로 유지
-                            if (operationState == OperationState.BEFORE_DEPARTURE) {
+                            if (runningStateByTimetableId[timetableId] == true) {
+                                operationState = OperationState.OPERATING
+                                isGpsTracking = true
+                                operationMessage = "저장된 운행 중 상태를 유지합니다"
+                            } else {
+                                operationState = OperationState.BEFORE_DEPARTURE
+                                isGpsTracking = false
                                 operationMessage = "출발 전 상태입니다"
                             }
                         }
                     }
                 }
                 .onFailure { throwable ->
-                    Log.e(TAG_RESTORE, "failed timetableId=$timetableId ${throwable.message}")
-                    // 서버 실패 시 기존 상태 유지, 메시지만 변경
-                    if (operationMessage == "운행 전입니다") {
+                    Log.e(TAG_RESTORE, "failed timetableId=$timetableId ${throwable.message}", throwable)
+
+                    if (runningStateByTimetableId[timetableId] == true) {
+                        operationState = OperationState.OPERATING
+                        isGpsTracking = true
+                        operationMessage = "서버 상태 확인 실패, 저장된 운행 상태를 유지합니다"
+                    } else if (operationMessage == "운행 전입니다") {
                         operationMessage = "서버 상태 확인 실패, 기존 상태 유지"
                     }
                 }
@@ -280,7 +329,7 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resolveTimetableId(): Long = selectedRoute?.timetableId() ?: 1L
 
-    // ── 이미 운행 중인 노선 서버 동기화 ─────────────────────────
+// ── 이미 운행 중인 노선 서버 동기화 ─────────────────────────
 
     fun syncRunningRouteFromServer(route: DriverRoute, passengers: Int) {
         selectedRoute = route
@@ -289,68 +338,129 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         actualDepartureTime = route.scheduledTime
         isGpsTracking = true
         operationMessage = "서버에서 운행 중인 운행을 불러왔습니다"
+
         val timetableId = route.timetableId()
+
         route.busId?.let { busId ->
             activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
+            persistRunningState(timetableId, true, busId)
         }
+
         runningStateByTimetableId = runningStateByTimetableId + (timetableId to true)
+
         seatStateByTimetableId = seatStateByTimetableId + (
-            timetableId to SeatState(
-                currentSeats = passengerCount,
-                totalSeats = route.totalSeats,
-                status = "RUNNING"
-            )
-        )
+                timetableId to SeatState(
+                    currentSeats = passengerCount,
+                    totalSeats = route.totalSeats,
+                    status = "RUNNING"
+                )
+                )
     }
 
-    // ── 출발 등록 ─────────────────────────────────────────────
+// ── 출발 등록 / 운행 종료 ──────────────────────────────────
 
     fun startOperation(latitude: Double, longitude: Double) {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-        val route = selectedRoute
-        val timetableId = route?.timetableId() ?: 1L
-        actualDepartureTime = now
-        operationState = OperationState.OPERATING
-        isGpsTracking = true
-        lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
-        operationMessage = "출발 등록 및 GPS 전송 중입니다"
-        Log.d(TAG_DRIVER_SCREEN, "운행 시작, passengerCount=$passengerCount timetableId=$timetableId")
+        val route = selectedRoute ?: run {
+            operationMessage = "선택된 노선이 없습니다"
+            return
+        }
+        val timetableId = route.timetableId()
 
         viewModelScope.launch {
-            var departBusId: Long? = null
-            shuttleRepository.departTimetable(timetableId)
-                .onSuccess { depart ->
-                    departBusId = depart?.busId
-                    Log.i(TAG_DEPART,
-                        "timetableId=$timetableId busId=${depart?.busId} status=${depart?.busStatus}")
-                    actualDepartureTime = depart?.actualDepartureTime?.take(5) ?: now
-                    operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
-                    val resolvedBusId = departBusId
-                    if (resolvedBusId != null) {
-                        selectedRoute = route?.copy(busId = resolvedBusId)
-                        activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to resolvedBusId)
-                        runningStateByTimetableId = runningStateByTimetableId + (timetableId to true)
-                        persistRunningState(timetableId, true, resolvedBusId)
+            val isCurrentlyRunning = runningStateByTimetableId[timetableId] == true
+
+            Log.d(
+                TAG_DRIVER_SCREEN,
+                "운행 버튼 클릭, timetableId=$timetableId isCurrentlyRunning=$isCurrentlyRunning passengerCount=$passengerCount"
+            )
+
+            if (isCurrentlyRunning) {
+                operationMessage = "운행 종료 처리 중입니다"
+
+                val finish = shuttleRepository.finishTimetable(timetableId)
+                    .getOrElse { throwable ->
+                        Log.e(
+                            TAG_DEPART,
+                            "finish failed: timetableId=$timetableId message=${throwable.message}",
+                            throwable
+                        )
+                        operationMessage = "운행 종료 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
+                        return@launch
                     }
-                }
-                .onFailure { throwable ->
-                    Log.e(TAG_DEPART, "timetableId=$timetableId failed: ${throwable.message}")
-                    operationMessage = "출발 등록 실패, GPS 전송을 계속 시도합니다: ${throwable.message ?: "서버 응답 확인 필요"}"
+
+                Log.i(
+                    TAG_DEPART,
+                    "finish success: timetableId=$timetableId busId=${finish?.busId} status=${finish?.busStatus}"
+                )
+
+                operationState = OperationState.COMPLETED
+                isGpsTracking = false
+                operationMessage = "운행 종료 완료"
+
+                runningStateByTimetableId =
+                    runningStateByTimetableId + (timetableId to false)
+
+                activeBusIdsByTimetableId =
+                    activeBusIdsByTimetableId - timetableId
+
+                persistRunningState(timetableId, false, null)
+
+                finish?.busId?.let { finishedBusId ->
+                    selectedRoute = route.copy(busId = finishedBusId)
                 }
 
-            val busId = departBusId
+                restoreStateFromServer(timetableId)
+
+                return@launch
+            }
+
+            operationMessage = "출발 등록 및 GPS 전송 중입니다"
+
+            val depart = shuttleRepository.departTimetable(timetableId)
+                .getOrElse { throwable ->
+                    Log.e(
+                        TAG_DEPART,
+                        "depart failed: timetableId=$timetableId message=${throwable.message}",
+                        throwable
+                    )
+                    isGpsTracking = false
+                    operationMessage = "출발 등록 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
+                    return@launch
+                }
+
+            Log.i(
+                TAG_DEPART,
+                "depart success: timetableId=$timetableId busId=${depart?.busId} status=${depart?.busStatus}"
+            )
+
+            val busId = depart?.busId
                 ?: activeBusIdsByTimetableId[timetableId]
                 ?: shuttleRepository.getBusStatuses(timetableId).getOrNull()?.busId
-                ?: route?.busId
+                ?: route.busId
+
             if (busId == null) {
-                operationMessage = "출발 등록 완료, busId 조회 실패로 GPS 전송을 보류했습니다"
+                isGpsTracking = false
+                operationMessage = "출발 등록은 완료됐지만 busId를 받지 못했습니다. GPS 전송을 보류합니다."
                 Log.w(TAG_GPS, "startOperation skipped: busId is null, timetableId=$timetableId")
                 return@launch
             }
-            selectedRoute = route?.copy(busId = busId)
-            activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
-            runningStateByTimetableId = runningStateByTimetableId + (timetableId to true)
+
+            selectedRoute = route.copy(busId = busId)
+
+            activeBusIdsByTimetableId =
+                activeBusIdsByTimetableId + (timetableId to busId)
+
+            runningStateByTimetableId =
+                runningStateByTimetableId + (timetableId to true)
+
             persistRunningState(timetableId, true, busId)
+
+            operationState = OperationState.OPERATING
+            isGpsTracking = true
+            lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+            actualDepartureTime = depart?.actualDepartureTime?.take(5) ?: now
+            operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
 
             shuttleRepository.postDriverLocation(
                 busId = busId,
@@ -358,17 +468,24 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 longitude = longitude
             ).onSuccess {
                 operationMessage = "GPS 위치가 서버에 전송되었습니다"
-                Log.i(TAG_GPS,
-                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200")
+                Log.i(
+                    TAG_GPS,
+                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200"
+                )
             }.onFailure { throwable ->
                 operationMessage = "GPS 전송 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
-                Log.e(TAG_GPS,
-                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}")
+                Log.e(
+                    TAG_GPS,
+                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}",
+                    throwable
+                )
             }
+
+            refreshPassengerStateFromServer(showMessage = false)
         }
     }
 
-    // ── GPS 주기 전송 ─────────────────────────────────────────
+// ── GPS 주기 전송 ─────────────────────────────────────────
 
     fun sendCurrentLocation(latitude: Double, longitude: Double) {
         val route = selectedRoute ?: return
@@ -376,19 +493,23 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
 
         val timetableId = route.timetableId()
         lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+
         viewModelScope.launch {
             val busId = route.busId
                 ?: activeBusIdsByTimetableId[timetableId]
                 ?: shuttleRepository.getBusStatuses(timetableId)
                     .getOrNull()
                     ?.busId
+
             if (busId == null) {
                 Log.w(TAG_GPS, "timetableId=$timetableId busId=null, skipping location update")
                 return@launch
             }
+
             if (route.busId == null) {
                 selectedRoute = route.copy(busId = busId)
             }
+
             activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
 
             shuttleRepository.postDriverLocation(
@@ -397,12 +518,17 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 longitude = longitude
             ).onSuccess {
                 operationMessage = "GPS 위치가 서버에 갱신되었습니다"
-                Log.i(TAG_GPS,
-                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200")
+                Log.i(
+                    TAG_GPS,
+                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200"
+                )
             }.onFailure { throwable ->
                 operationMessage = "GPS 갱신 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
-                Log.e(TAG_GPS,
-                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}")
+                Log.e(
+                    TAG_GPS,
+                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}",
+                    throwable
+                )
             }
         }
     }
@@ -415,11 +541,12 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         operationMessage = message
     }
 
-    // ── 서버 좌석 상태 갱신 ───────────────────────────────────
+// ── 서버 좌석 상태 갱신 ───────────────────────────────────
 
     fun refreshPassengerStateFromServer(showMessage: Boolean = false) {
         val route = selectedRoute ?: return
         val timetableId = route.timetableId()
+
         viewModelScope.launch {
             shuttleRepository.getBusStatuses(timetableId)
                 .onSuccess { response ->
@@ -427,26 +554,44 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                     val passengers = response?.currentSeats
                         ?: response?.currentPassengers
                         ?: response?.passengerCount
-                        ?: (response?.remainingSeats ?: response?.availableSeats)?.let { total - it }
+                        ?: response?.remainingSeats?.let { total - it }
+                        ?: response?.availableSeats?.let { total - it }
+
                     if (passengers != null) {
                         passengerCount = passengers.coerceIn(0, total)
                     }
+
+                    val busId = response?.busId ?: route.busId
+
                     seatStateByTimetableId = seatStateByTimetableId + (
-                        timetableId to SeatState(
-                            currentSeats = passengerCount,
-                            totalSeats = total,
-                            status = response?.status ?: operationState.toApiStatus()
-                        )
-                    )
+                            timetableId to SeatState(
+                                currentSeats = passengerCount,
+                                totalSeats = total,
+                                status = response?.status ?: operationState.toApiStatus()
+                            )
+                            )
+
                     selectedRoute = route.copy(
                         totalSeats = total,
-                        busId = response?.busId ?: route.busId
+                        busId = busId
                     )
+
+                    if (busId != null) {
+                        activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
+                    }
+
+                    Log.i(
+                        TAG_RESTORE,
+                        "refresh seats timetableId=$timetableId busId=$busId total=$total current=$passengerCount remaining=${total - passengerCount}"
+                    )
+
                     if (showMessage) {
                         operationMessage = "서버 좌석 상태를 새로고침했습니다"
                     }
                 }
                 .onFailure { throwable ->
+                    Log.e(TAG_RESTORE, "refresh seats failed timetableId=$timetableId ${throwable.message}", throwable)
+
                     if (showMessage) {
                         operationMessage = "좌석 상태 새로고침 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
                     }
@@ -454,56 +599,92 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    // ── 운행 종료 ─────────────────────────────────────────────
+// ── 운행 종료 ─────────────────────────────────────────────
 
     fun endOperation() {
-        operationState = OperationState.COMPLETED
-        isGpsTracking = false
-        operationMessage = "운행이 종료되어 GPS 전송이 중지되었습니다"
-        val timetableId = selectedRoute?.timetableId() ?: return
-        runningStateByTimetableId = runningStateByTimetableId + (timetableId to false)
-        persistRunningState(timetableId, false, null)
+        val route = selectedRoute ?: return
+        val timetableId = route.timetableId()
+
+        viewModelScope.launch {
+            operationMessage = "운행 종료 처리 중입니다"
+
+            shuttleRepository.finishTimetable(timetableId)
+                .onSuccess { response ->
+                    Log.i(
+                        TAG_DEPART,
+                        "endOperation finish success timetableId=$timetableId busId=${response?.busId} status=${response?.busStatus}"
+                    )
+
+                    operationState = OperationState.COMPLETED
+                    isGpsTracking = false
+                    operationMessage = "운행이 종료되어 GPS 전송이 중지되었습니다"
+
+                    runningStateByTimetableId =
+                        runningStateByTimetableId + (timetableId to false)
+
+                    activeBusIdsByTimetableId =
+                        activeBusIdsByTimetableId - timetableId
+
+                    persistRunningState(timetableId, false, null)
+
+                    refreshPassengerStateFromServer(showMessage = false)
+                }
+                .onFailure { throwable ->
+                    operationMessage = "운행 종료 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
+                    Log.e(
+                        TAG_DEPART,
+                        "endOperation finish failed timetableId=$timetableId ${throwable.message}",
+                        throwable
+                    )
+                }
+        }
     }
 
-    // ── 상차/하차 수기 집계 ───────────────────────────────────
+// ── 상차/하차 수기 집계 ───────────────────────────────────
 
     fun increasePassengers() {
         val route = selectedRoute ?: return
         val total = route.totalSeats
+
         when {
             operationState != OperationState.OPERATING -> {
                 operationMessage = "운행 중에만 탑승 수를 집계할 수 있습니다"
             }
+
             passengerCount >= total -> {
                 operationMessage = "탑승 수가 총 좌석 수를 초과할 수 없습니다"
             }
+
             else -> syncPassengerTag(type = "BOARD")
         }
     }
 
     fun decreasePassengers() {
-        val route = selectedRoute ?: return
+        selectedRoute ?: return
+
         when {
             operationState != OperationState.OPERATING -> {
                 operationMessage = "운행 중에만 하차 수를 집계할 수 있습니다"
             }
+
             passengerCount <= 0 -> {
                 operationMessage = "현재 탑승 수가 0명이라 하차 처리할 수 없습니다"
             }
+
             else -> syncPassengerTag(type = "ALIGHT")
         }
     }
 
     fun reset() {
-        operationState      = OperationState.BEFORE_DEPARTURE
-        passengerCount      = 0
+        operationState = OperationState.BEFORE_DEPARTURE
+        passengerCount = 0
         actualDepartureTime = null
-        isGpsTracking       = false
-        operationMessage    = "운행 전입니다"
-        lastGpsText         = null
+        isGpsTracking = false
+        operationMessage = "운행 전입니다"
+        lastGpsText = null
     }
 
-    // ── 탑승/하차 서버 반영 ───────────────────────────────────
+// ── 탑승/하차 서버 반영 ───────────────────────────────────
 
     private fun syncPassengerTag(type: String) {
         val route = selectedRoute ?: return
@@ -512,9 +693,11 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         val role = TokenStore.role
         val email = TokenStore.email
 
-        Log.i(TAG_TAG_API,
+        Log.i(
+            TAG_TAG_API,
             "timetableId=$timetableId type=$type currentRole=$role currentEmail=$email " +
-            "hasAccessToken=${!token.isNullOrBlank()} requestUrl=/api/buses/$timetableId/tags")
+                    "hasAccessToken=${!token.isNullOrBlank()} requestUrl=/api/buses/$timetableId/tags"
+        )
         Log.d(TAG_DRIVER_SCREEN, "click $type: passengerCount 변경 전=$passengerCount")
 
         if (token.isNullOrBlank()) {
@@ -523,52 +706,84 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        operationMessage = if (type == "BOARD") "탑승 수를 서버에 반영 중입니다"
-                          else "하차 수를 서버에 반영 중입니다"
+        operationMessage = if (type == "BOARD") {
+            "탑승 수를 서버에 반영 중입니다"
+        } else {
+            "하차 수를 서버에 반영 중입니다"
+        }
 
         viewModelScope.launch {
             shuttleRepository.postBusTag(timetableId, BusTagRequest(type = type))
                 .onSuccess { response ->
-                    Log.i(TAG_TAG_API,
-                        "timetableId=$timetableId tagType=${response?.tagType} responseCode=200")
-                    // 태그 성공 후 seats API로 정확한 상태 재조회
+                    Log.i(
+                        TAG_TAG_API,
+                        "timetableId=$timetableId tagType=${response?.tagType} responseCode=200"
+                    )
+
                     shuttleRepository.getBusStatuses(timetableId)
                         .onSuccess { seatResponse ->
                             val total = seatResponse?.totalSeats
                                 ?: response?.totalSeats
                                 ?: route.totalSeats
+
                             val current = seatResponse?.currentSeats
                                 ?: seatResponse?.currentPassengers
                                 ?: seatResponse?.passengerCount
                                 ?: response?.currentSeats
                                 ?: response?.remainingSeats?.let { total - it }
+
                             if (current != null) {
                                 passengerCount = current.coerceIn(0, total)
                             }
-                            Log.d(TAG_DRIVER_SCREEN, "click $type: passengerCount 변경 후=$passengerCount (GPS 전송은 별도, 좌석 수에 영향 없음)")
+
                             val busId = seatResponse?.busId ?: response?.busId ?: route.busId
+
                             selectedRoute = route.copy(totalSeats = total, busId = busId)
-                            busId?.let {
-                                activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to it)
+
+                            if (busId != null) {
+                                activeBusIdsByTimetableId =
+                                    activeBusIdsByTimetableId + (timetableId to busId)
                             }
+
                             seatStateByTimetableId = seatStateByTimetableId + (
-                                timetableId to SeatState(
-                                    currentSeats = passengerCount,
-                                    totalSeats = total,
-                                    status = operationState.toApiStatus()
-                                )
+                                    timetableId to SeatState(
+                                        currentSeats = passengerCount,
+                                        totalSeats = total,
+                                        status = seatResponse?.status ?: operationState.toApiStatus()
+                                    )
+                                    )
+
+                            Log.d(
+                                TAG_DRIVER_SCREEN,
+                                "click $type: passengerCount 변경 후=$passengerCount remaining=${total - passengerCount}"
                             )
                         }
-                    operationMessage = if (type == "BOARD") "탑승 수가 서버에 반영되었습니다"
-                                      else "하차 수가 서버에 반영되었습니다"
+                        .onFailure { throwable ->
+                            Log.e(
+                                TAG_TAG_API,
+                                "seat refresh failed timetableId=$timetableId ${throwable.message}",
+                                throwable
+                            )
+                        }
+
+                    operationMessage = if (type == "BOARD") {
+                        "탑승 수가 서버에 반영되었습니다"
+                    } else {
+                        "하차 수가 서버에 반영되었습니다"
+                    }
                 }
                 .onFailure { throwable ->
                     operationMessage = "서버 반영 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
-                    Log.e(TAG_TAG_API,
-                        "timetableId=$timetableId type=$type errorBody=${throwable.message}")
+                    Log.e(
+                        TAG_TAG_API,
+                        "timetableId=$timetableId type=$type errorBody=${throwable.message}",
+                        throwable
+                    )
                 }
         }
     }
+
+
 }
 
 private fun OperationState.toApiStatus(): String {
@@ -588,33 +803,45 @@ private fun String.digitsAsLong(): Long? {
 }
 
 private fun TimetableResponse.toDriverRoute(index: Int): DriverRoute? {
-    val tid = listOfNotNull(timetableId, specificTimetableId, id).firstOrNull() ?: return null
-    val stopNames = (routeList ?: stops)?.mapIndexedNotNull { i, el ->
+    val timetableId = listOfNotNull(timetableId, specificTimetableId, id).firstOrNull() ?: return null
+
+
+    val stopNames = (routeList ?: stops)?.mapIndexedNotNull { index, element ->
         when {
-            el.isJsonPrimitive -> el.asString
-            el.isJsonObject -> {
-                val obj = el.asJsonObject
+            element.isJsonPrimitive -> element.asString
+
+            element.isJsonObject -> {
+                val obj = element.asJsonObject
                 listOf("name", "stopName", "busStopName")
                     .firstNotNullOfOrNull { key ->
                         obj.get(key)?.takeIf { it.isJsonPrimitive }?.asString
-                    } ?: "정류장${i + 1}"
+                    } ?: "정류장${index + 1}"
             }
+
             else -> null
         }
     }.orEmpty()
-    val name = listOfNotNull(routeName, route)
+
+    val routeName = listOfNotNull(routeName, route)
         .firstOrNull { it.isNotBlank() }
-        ?: listOfNotNull(startStop, endStop).filter { it.isNotBlank() }.joinToString(" → ")
+        ?: listOfNotNull(startStop, endStop)
+            .filter { it.isNotBlank() }
+            .joinToString(" → ")
             .takeIf { it.isNotBlank() }
         ?: "노선 ${index + 1}"
+
     val scheduledTime = listOfNotNull(departureTime, departAt, this.time, plannedDeparture)
-        .firstOrNull { it.isNotBlank() } ?: "00:00"
+        .firstOrNull { it.isNotBlank() }
+        ?: "00:00"
+
     return DriverRoute(
-        id = "timetable_$tid",
-        routeName = name,
+        id = "timetable_$timetableId",
+        routeName = routeName,
         scheduledTime = scheduledTime,
         totalSeats = 45,
         stops = stopNames,
-        timetableId = tid
+        timetableId = timetableId
     )
+
+
 }

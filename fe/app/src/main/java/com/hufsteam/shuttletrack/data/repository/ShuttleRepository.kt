@@ -162,6 +162,11 @@ class ShuttleRepository(
             .payloadSingleOrListFirst()
             ?.let { gson.decode<DepartResponse>(it) }
     }
+    suspend fun finishTimetable(timetableId: Long): Result<DepartResponse?> = runCatching {
+        apiService.finishTimetable(timetableId)
+            .payloadSingleOrListFirst()
+            ?.let { gson.decode<DepartResponse>(it) }
+    }
 
     suspend fun postBusTag(timetableId: Long, request: BusTagRequest): Result<BusTagResponse?> = runCatching {
         val hasToken = !TokenStore.accessToken.isNullOrBlank()
