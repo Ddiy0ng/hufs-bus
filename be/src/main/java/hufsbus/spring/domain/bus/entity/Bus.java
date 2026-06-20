@@ -58,4 +58,8 @@ public class Bus extends BaseEntity {
     public void startRunning() {
         this.status = BusStatus.RUNNING;
     }
+
+    public void finish() {
+        this.status = BusStatus.DONE;
+    }
 }

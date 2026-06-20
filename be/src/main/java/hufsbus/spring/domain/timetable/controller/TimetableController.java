@@ -20,4 +20,12 @@ public class TimetableController {
                 "출발 처리 성공"
         ));
     }
+
+    @PatchMapping("/{timetableId}/finish")
+    public ResponseEntity<ApiResponseDto<DepartResponse>> finish(@PathVariable Long timetableId) {
+        return ResponseEntity.ok(ApiResponseDto.of(
+                timetableService.finish(timetableId),
+                "운행 종료 처리 성공"
+        ));
+    }
 }
