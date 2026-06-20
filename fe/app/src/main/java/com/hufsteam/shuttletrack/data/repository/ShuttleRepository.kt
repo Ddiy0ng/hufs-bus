@@ -35,6 +35,8 @@ private const val LIVE_LOG_TAG = "SSE"
 private const val DRIVER_LOCATION_LOG_TAG = "GPS"
 private const val SEATS_LOG_TAG = "SeatsApi"
 
+data class SseEvent(val eventType: String, val rawData: String, val liveEta: LiveEtaResponse?)
+
 class ShuttleRepository(
     private val apiService: ApiService = RetrofitClient.apiService,
     private val gson: Gson = RetrofitClient.gson
@@ -100,6 +102,12 @@ class ShuttleRepository(
     }
 
     fun subscribeLiveEta(timetableId: Long): Flow<LiveEtaResponse> = flow {
+        subscribeRawSseEvents(timetableId).collect { event ->
+            event.liveEta?.let { emit(it) }
+        }
+    }.flowOn(Dispatchers.IO)
+
+    fun subscribeRawSseEvents(timetableId: Long): Flow<SseEvent> = flow {
         val token = TokenStore.accessToken?.takeIf { it.isNotBlank() }
         val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
             .toHttpUrl()
@@ -117,15 +125,19 @@ class ShuttleRepository(
         liveClient.newCall(request).execute().use { response ->
             Log.i(
                 LIVE_LOG_TAG,
-                "timetableId=$timetableId hasAccessToken=${token != null} responseCode=${response.code}"
+                "SSE_CONNECTED timetableId=$timetableId hasAccessToken=${token != null} responseCode=${response.code}"
             )
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string().orEmpty()
-                Log.e(LIVE_LOG_TAG, "timetableId=$timetableId responseCode=${response.code} errorBody=$errorBody")
+                Log.e(LIVE_LOG_TAG,
+                    "SSE_FAILED timetableId=$timetableId responseCode=${response.code} errorBody=$errorBody")
                 throw IOException("HTTP ${response.code}: ${errorBody.ifBlank { "empty error body" }}")
             }
 
-            val source = response.body?.source() ?: return@use
+            val source = response.body?.source() ?: run {
+                Log.w(LIVE_LOG_TAG, "SSE_NO_BODY timetableId=$timetableId")
+                return@use
+            }
             val dataLines = mutableListOf<String>()
             var eventName: String? = null
             while (currentCoroutineContext().isActive) {
@@ -134,14 +146,19 @@ class ShuttleRepository(
                     line.startsWith("event:") -> eventName = line.removePrefix("event:").trim()
                     line.startsWith("data:") -> dataLines += line.removePrefix("data:").trim()
                     line.isBlank() && dataLines.isNotEmpty() -> {
-                        Log.i(LIVE_LOG_TAG, "timetableId=$timetableId eventType=${eventName ?: "data"}")
-                        // snapshot, location-update, seat-update, bus-update 모두 처리
-                        dataLines.toLiveEtaOrNull()?.let { emit(it) }
+                        val rawData = dataLines.joinToString("")
+                        val resolvedType = eventName ?: "data"
+                        val liveEta = dataLines.toLiveEtaOrNull()
+                        Log.i(LIVE_LOG_TAG,
+                            "SSE_EVENT timetableId=$timetableId eventType=$resolvedType " +
+                            "currentSeats=${liveEta?.currentSeats} rawData=$rawData")
+                        emit(SseEvent(eventType = resolvedType, rawData = rawData, liveEta = liveEta))
                         dataLines.clear()
                         eventName = null
                     }
                 }
             }
+            Log.i(LIVE_LOG_TAG, "SSE_DISCONNECTED timetableId=$timetableId")
         }
     }.flowOn(Dispatchers.IO)
 

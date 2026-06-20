@@ -100,6 +100,8 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
     var driverRoutesError by mutableStateOf<String?>(null)
         private set
 
+    private val locallyFinishedTimetableIds = mutableSetOf<Long>()
+
     init {
         restorePersistedState()
         loadDriverRoutes()
@@ -168,6 +170,13 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         if (restoredRunning.isNotEmpty()) {
             runningStateByTimetableId = restoredRunning
         }
+
+        all.entries
+            .filter { it.key.startsWith("finished_") }
+            .forEach { (key, value) ->
+                val id = key.removePrefix("finished_").toLongOrNull() ?: return@forEach
+                if (value == true) locallyFinishedTimetableIds.add(id)
+            }
     }
 
     private fun persistRunningState(timetableId: Long, isRunning: Boolean, busId: Long?) {
@@ -273,13 +282,25 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
 
                     when (status) {
                         "RUNNING" -> {
-                            operationState = OperationState.OPERATING
-                            isGpsTracking = true
-                            runningStateByTimetableId = runningStateByTimetableId + (timetableId to true)
-                            operationMessage = "서버에서 운행 중 상태를 복원했습니다"
-
-                            if (busId != null) {
-                                persistRunningState(timetableId, true, busId)
+                            val wasLocallyFinished = locallyFinishedTimetableIds.contains(timetableId) ||
+                                prefs.getBoolean("finished_$timetableId", false)
+                            if (wasLocallyFinished) {
+                                Log.i(TAG_RESTORE,
+                                    "timetableId=$timetableId server=RUNNING but locally finished - forcing DONE")
+                                operationState = OperationState.COMPLETED
+                                isGpsTracking = false
+                                runningStateByTimetableId = runningStateByTimetableId + (timetableId to false)
+                                activeBusIdsByTimetableId = activeBusIdsByTimetableId - timetableId
+                                operationMessage = "운행이 종료된 상태입니다"
+                                persistRunningState(timetableId, false, null)
+                            } else {
+                                operationState = OperationState.OPERATING
+                                isGpsTracking = true
+                                runningStateByTimetableId = runningStateByTimetableId + (timetableId to true)
+                                operationMessage = "서버에서 운행 중 상태를 복원했습니다"
+                                if (busId != null) {
+                                    persistRunningState(timetableId, true, busId)
+                                }
                             }
                         }
 
@@ -405,6 +426,8 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                     activeBusIdsByTimetableId - timetableId
 
                 persistRunningState(timetableId, false, null)
+                locallyFinishedTimetableIds.add(timetableId)
+                prefs.edit().putBoolean("finished_$timetableId", true).apply()
 
                 finish?.busId?.let { finishedBusId ->
                     selectedRoute = route.copy(busId = finishedBusId)
@@ -455,6 +478,8 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 runningStateByTimetableId + (timetableId to true)
 
             persistRunningState(timetableId, true, busId)
+            locallyFinishedTimetableIds.remove(timetableId)
+            prefs.edit().remove("finished_$timetableId").apply()
 
             operationState = OperationState.OPERATING
             isGpsTracking = true
@@ -626,6 +651,8 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                         activeBusIdsByTimetableId - timetableId
 
                     persistRunningState(timetableId, false, null)
+                    locallyFinishedTimetableIds.add(timetableId)
+                    prefs.edit().putBoolean("finished_$timetableId", true).apply()
 
                     refreshPassengerStateFromServer(showMessage = false)
                 }

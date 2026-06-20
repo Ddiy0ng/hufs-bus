@@ -14,6 +14,7 @@ import com.hufsteam.shuttletrack.data.remote.dto.FavoriteResponse
 import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
+import com.hufsteam.shuttletrack.data.repository.SseEvent
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
@@ -41,7 +42,9 @@ data class RouteDetail(
     val etaText: String,
     val stopInfos: Map<String, StopArrivalInfo>,
     val isRunning: Boolean = false,
-    val statusText: String = "운행 전"
+    val statusText: String = "운행 전",
+    val currentPassengerCount: Int = -1,
+    val totalSeats: Int = FIXED_TOTAL_SEATS
 ) {
     fun infoFor(stopName: String): StopArrivalInfo {
         val normalized = stopName.replace("\n", " ")
@@ -111,14 +114,31 @@ class StudentBusViewModel : ViewModel() {
 
     fun startRouteStatusUpdates(schedule: BusSchedule) {
         routeStatusJob?.cancel()
+        val timetableId = schedule.timetableId ?: schedule.id.toLong()
         routeStatusJob = viewModelScope.launch {
             repository.subscribeRouteDetail(schedule)
-                .catch {
+                .catch { e ->
+                    Log.e("SSE", "subscribeRouteDetail failed timetableId=$timetableId: ${e.message}", e)
                     val detail = repository.loadRouteDetail(schedule)
                     uiState = uiState.copy(selectedRouteDetail = detail)
                 }
                 .collectLatest { detail ->
                     uiState = uiState.copy(selectedRouteDetail = detail)
+                    if (detail.currentPassengerCount >= 0) {
+                        val cnt = detail.currentPassengerCount
+                        val tot = detail.totalSeats
+                        val rem = (tot - cnt).coerceIn(0, tot)
+                        fun List<BusSchedule>.patched() = map { s ->
+                            if ((s.timetableId ?: s.id.toLong()) == timetableId)
+                                s.copy(currentPassengerCount = cnt, remainingSeats = rem,
+                                    totalSeats = tot, hasSeatInfo = true, seatInfoSource = "SSE")
+                            else s
+                        }
+                        uiState = uiState.copy(
+                            offCampusSchedules = uiState.offCampusSchedules.patched(),
+                            onCampusSchedules = uiState.onCampusSchedules.patched()
+                        )
+                    }
                 }
         }
     }
@@ -241,12 +261,36 @@ class StudentBusRepository(
     fun subscribeRouteDetail(schedule: BusSchedule) = flow {
         val timetableId = schedule.timetableId ?: schedule.id.toLong()
         emit(loadRouteDetail(schedule))
-        shuttleRepository.subscribeLiveEta(timetableId)
-            .collect { liveEta ->
-                val busStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
-                val driverLocation = busStatus?.busId?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
-                emit(routeDetailFromApi(schedule, liveEta, busStatus, driverLocation))
+        var cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
+        var cachedDriverLocation = cachedBusStatus?.busId
+            ?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
+        shuttleRepository.subscribeRawSseEvents(timetableId).collect { event ->
+            Log.i("SSE", "subscribeRouteDetail timetableId=$timetableId " +
+                "eventType=${event.eventType} currentSeats=${event.liveEta?.currentSeats}")
+            when (event.eventType) {
+                "seat-update" -> {
+                    val sseSeats = event.liveEta?.currentSeats
+                    if (sseSeats != null) {
+                        val patchedStatus = cachedBusStatus?.copy(currentSeats = sseSeats)
+                            ?: BusStatusResponse(currentSeats = sseSeats, status = "RUNNING",
+                                totalSeats = event.liveEta.totalSeats)
+                        emit(routeDetailFromApi(schedule, event.liveEta, patchedStatus, cachedDriverLocation))
+                    } else {
+                        cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
+                        emit(routeDetailFromApi(schedule, event.liveEta, cachedBusStatus, cachedDriverLocation))
+                    }
+                }
+                "location-update" -> {
+                    emit(routeDetailFromApi(schedule, event.liveEta, cachedBusStatus, cachedDriverLocation))
+                }
+                else -> {
+                    cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
+                    cachedDriverLocation = cachedBusStatus?.busId
+                        ?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
+                    emit(routeDetailFromApi(schedule, event.liveEta, cachedBusStatus, cachedDriverLocation))
+                }
             }
+        }
     }
 
     suspend fun saveFavorite(schedule: BusSchedule, days: Set<String>, isExisting: Boolean): Boolean {
@@ -544,7 +588,9 @@ class StudentBusRepository(
             etaText = eta,
             stopInfos = infos,
             isRunning = hasLiveBus,
-            statusText = statusText
+            statusText = statusText,
+            currentPassengerCount = currentPassengers ?: -1,
+            totalSeats = totalSeats
         )
     }
 
