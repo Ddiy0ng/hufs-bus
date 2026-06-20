@@ -306,24 +306,53 @@ class StudentBusRepository(
                 totalSeats = totalSeats,
                 currentSeats = null,
                 displayRemainingSeats = null,
+                runningStatus = runningStatus,
                 source = if (statusResult.isFailure) "error" else "cached",
                 error = statusResult.exceptionOrNull()
             )
             return copy(hasSeatInfo = false, seatInfoSource = if (statusResult.isFailure) "error" else "cached")
         }
+        val apiStatus = busStatus.status?.trim()?.uppercase() ?: "UNKNOWN"
         val total = busStatus.totalSeats ?: totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
-        val current = firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
-        if (current == null) {
+
+        if (apiStatus != "RUNNING") {
+            // 운행 전/종료: 여석 표시 안 함. 정원만 저장. 절대 0석 표시 안 함.
             logSeatDisplay(
                 schedule = this,
                 totalSeats = total,
                 currentSeats = null,
                 displayRemainingSeats = null,
-                source = "error"
+                runningStatus = apiStatus,
+                source = "seats API (status=$apiStatus, not running)"
             )
-            return copy(totalSeats = total, hasSeatInfo = false, seatInfoSource = "error")
+            return copy(
+                totalSeats = total,
+                runningStatus = apiStatus,
+                hasSeatInfo = false,
+                seatInfoSource = "seats API (status=$apiStatus)"
+            )
         }
-        val remaining = (total - current).coerceIn(0, total)
+
+        // 운행 중: 여석 계산 (1순위: 서버 remainingSeats, 2순위: currentSeats 계산)
+        val serverRemaining = firstInt(busStatus.remainingSeats, busStatus.availableSeats)
+        val current = firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
+        val remaining: Int
+        if (serverRemaining != null) {
+            remaining = serverRemaining.coerceIn(0, total)
+        } else if (current != null) {
+            remaining = (total - current).coerceIn(0, total)
+        } else {
+            logSeatDisplay(
+                schedule = this,
+                totalSeats = total,
+                currentSeats = null,
+                displayRemainingSeats = null,
+                runningStatus = apiStatus,
+                source = "error: RUNNING but no seat data"
+            )
+            return copy(totalSeats = total, runningStatus = "RUNNING", hasSeatInfo = false, seatInfoSource = "error")
+        }
+
         val locationText = busStatus.currentStopName
             ?.takeIf { it.isNotBlank() }
             ?.let { "현재 위치 | $it" }
@@ -333,11 +362,13 @@ class StudentBusRepository(
             totalSeats = total,
             currentSeats = current,
             displayRemainingSeats = remaining,
+            runningStatus = apiStatus,
             source = "seats API"
         )
         return copy(
             totalSeats = total,
             remainingSeats = remaining,
+            runningStatus = "RUNNING",
             currentLocation = locationText,
             hasSeatInfo = true,
             seatInfoSource = "seats API"
@@ -486,7 +517,12 @@ class StudentBusRepository(
             normalized to StopArrivalInfo(
                 stopName = normalized,
                 arrivalText = arrival,
-                seatText = if (hasSeatInfo) "${remainingSeats.toString().padStart(2, '0')}석" else "확인 중"
+                seatText = when {
+                    hasSeatInfo -> "${remainingSeats.toString().padStart(2, '0')}석"
+                    statusIsDone -> "운행 종료"
+                    statusIsRunning -> "확인 중"
+                    else -> "운행 전"
+                }
             )
         }
         val safeLastIndex = stops.lastIndex.coerceAtLeast(0)
@@ -652,12 +688,16 @@ private fun logSeatDisplay(
     totalSeats: Int,
     currentSeats: Int?,
     displayRemainingSeats: Int?,
+    runningStatus: String? = null,
     source: String,
     error: Throwable? = null
 ) {
+    val showingZero = displayRemainingSeats == 0
     val msg = "SeatDisplay id=${schedule.id} timetableId=${schedule.timetableId} " +
-        "route=${schedule.routeName} total=$totalSeats current=$currentSeats " +
-        "remaining=$displayRemainingSeats source=$source"
+        "route=${schedule.routeName} status=${runningStatus ?: schedule.runningStatus} " +
+        "total=$totalSeats current=$currentSeats remaining=$displayRemainingSeats " +
+        "showingZero=$showingZero isRealZero=${showingZero && runningStatus == "RUNNING"} " +
+        "source=$source"
     if (error != null) {
         Log.e(SEAT_DISPLAY_LOG_TAG, msg, error)
     } else {
