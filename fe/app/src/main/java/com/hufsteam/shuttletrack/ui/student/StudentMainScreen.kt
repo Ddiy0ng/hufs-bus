@@ -98,7 +98,9 @@ data class BusSchedule(
     val routeStops: List<String> = emptyList(),
     val campusType: String = "미분류",
     val hasSeatInfo: Boolean = false,
-    val seatInfoSource: String = "pending"
+    val seatInfoSource: String = "pending",
+    val runningStatus: String = "UNKNOWN",
+    val currentPassengerCount: Int = 0
 )
 
 data class FavoriteSchedule(
@@ -125,9 +127,6 @@ private val ShuttleRegularTextStyle = TextStyle(
     lineHeight = 16.sp,
     letterSpacing = 0.sp
 )
-private val offCampusSchedules = mockOffCampusSchedules
-private val onCampusSchedules = mockOnCampusSchedules
-
 private val offCampusRoutes = listOf(
     "판교역 → 외대(글)",
     "외대(글) → 판교역",
@@ -162,10 +161,8 @@ fun StudentMainScreen(
     }
     var currentScreen by remember { mutableStateOf(StudentScreen.TIMETABLE) }
     var selectedTab by remember { mutableStateOf(StudentTab.TIMETABLE) }
-    var selectedSchedule by remember { mutableStateOf(liveOffCampusSchedules.firstOrNull() ?: offCampusSchedules.first()) }
+    var selectedSchedule by remember { mutableStateOf<BusSchedule?>(liveOffCampusSchedules.firstOrNull()) }
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
-    val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
-    val liveRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule).withSeatText(liveSelectedSchedule)
 
     // 즐겨찾기 변경 시 출발 알림 재스케줄링
     LaunchedEffect(studentUiState.favoriteSchedules) {
@@ -192,14 +189,15 @@ fun StudentMainScreen(
 
     LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
-        if (allSchedules.isNotEmpty() && allSchedules.none { it.id == selectedSchedule.id }) {
+        if (allSchedules.isNotEmpty() && allSchedules.none { it.id == selectedSchedule?.id }) {
             selectedSchedule = allSchedules.first()
         }
     }
 
-    DisposableEffect(currentScreen, selectedSchedule.id) {
-        if (currentScreen == StudentScreen.ROUTE_STATUS) {
-            studentBusViewModel.startRouteStatusUpdates(selectedSchedule)
+    DisposableEffect(currentScreen, selectedSchedule?.id) {
+        val schedule = selectedSchedule
+        if (currentScreen == StudentScreen.ROUTE_STATUS && schedule != null) {
+            studentBusViewModel.startRouteStatusUpdates(schedule)
         } else {
             studentBusViewModel.stopRouteStatusUpdates()
         }
@@ -254,19 +252,27 @@ fun StudentMainScreen(
                     }
                 )
 
-                StudentScreen.ROUTE_STATUS -> StudentRouteStatusContent(
-                    schedule = liveSelectedSchedule,
-                    routeDetail = liveRouteDetail,
-                    isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
-                    onRefresh = {
-                        studentBusViewModel.refreshAll(selectedSchedule)
-                    },
-                    onBackClick = {
-                        currentScreen = StudentScreen.TIMETABLE
-                        selectedTab = StudentTab.TIMETABLE
-                    },
-                    onFavoriteClick = { favoriteTarget = liveSelectedSchedule }
-                )
+                StudentScreen.ROUTE_STATUS -> {
+                    val currentSchedule = selectedSchedule
+                    if (currentSchedule != null) {
+                        val liveSelectedSchedule = currentSchedule.withLivePassengerState(driverViewModel)
+                        val liveRouteDetail = studentUiState.selectedRouteDetail
+                            ?: emptyRouteDetail(liveSelectedSchedule)
+                        StudentRouteStatusContent(
+                            schedule = liveSelectedSchedule,
+                            routeDetail = liveRouteDetail,
+                            isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
+                            onRefresh = {
+                                studentBusViewModel.refreshAll(currentSchedule)
+                            },
+                            onBackClick = {
+                                currentScreen = StudentScreen.TIMETABLE
+                                selectedTab = StudentTab.TIMETABLE
+                            },
+                            onFavoriteClick = { favoriteTarget = liveSelectedSchedule }
+                        )
+                    }
+                }
 
                 StudentScreen.FAVORITES -> StudentFavoritesContent(
                     favorites = favoriteSchedules,
@@ -332,11 +338,14 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
                 "DONE" -> "운행이 종료되었습니다"
                 else -> currentLocation
             }
+            val isActuallyRunning = seatState.status == "RUNNING"
             return normalized.copy(
                 totalSeats = seatState.totalSeats,
                 remainingSeats = (seatState.totalSeats - currentPassengers).coerceIn(0, seatState.totalSeats),
+                currentPassengerCount = currentPassengers,
                 currentLocation = liveLocation,
-                hasSeatInfo = true,
+                runningStatus = seatState.status,
+                hasSeatInfo = isActuallyRunning,
                 seatInfoSource = "local-driver-state"
             )
         }
@@ -355,18 +364,23 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
         OperationState.OPERATING -> "운행 중입니다"
         OperationState.COMPLETED -> "운행이 종료되었습니다"
     }
+    val driverRunningStatus = when (driverViewModel.operationState) {
+        OperationState.BEFORE_DEPARTURE -> "WAITING"
+        OperationState.OPERATING -> "RUNNING"
+        OperationState.COMPLETED -> "DONE"
+    }
     return normalized.copy(
         remainingSeats = (FIXED_TOTAL_SEATS - currentPassengers).coerceIn(0, FIXED_TOTAL_SEATS),
+        currentPassengerCount = currentPassengers,
         currentLocation = liveLocation,
-        hasSeatInfo = true,
+        runningStatus = driverRunningStatus,
+        hasSeatInfo = driverViewModel.operationState == OperationState.OPERATING,
         seatInfoSource = "local-driver-state"
     )
 }
 
 private fun BusSchedule.toDriverRoute(): DriverRoute {
-    val stops = routeStops
-        .ifEmpty { mockRouteDetailFor(this).stops }
-        .map { it.replace("\n", " ") }
+    val stops = routeStops.map { it.replace("\n", " ") }
 
     return DriverRoute(
         id = "timetable_$id",
@@ -383,6 +397,29 @@ private fun RouteDetail.withSeatText(schedule: BusSchedule): RouteDetail {
     return copy(
         plannedDeparture = schedule.departureTime,
         stopInfos = stopInfos.mapValues { (_, info) -> info.copy(seatText = seatText) }
+    )
+}
+
+private fun emptyRouteDetail(schedule: BusSchedule): RouteDetail {
+    val stops = schedule.routeStops
+    val infos = stops.associate { stop ->
+        val normalized = stop.replace("\n", " ")
+        normalized to StopArrivalInfo(
+            stopName = normalized,
+            arrivalText = "현재 운행 중인 버스가 없습니다",
+            seatText = "조회 중"
+        )
+    }
+    return RouteDetail(
+        stops = stops,
+        currentStopIndex = 0,
+        busProgressIndex = 0f,
+        plannedDeparture = schedule.departureTime,
+        actualDeparture = "미정",
+        etaText = "운행 전",
+        stopInfos = infos,
+        isRunning = false,
+        statusText = "운행 전"
     )
 }
 
@@ -635,15 +672,20 @@ private fun EmptyStateMessage(message: String) {
 
 @Composable
 private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
-    val seatLabel = if (schedule.hasSeatInfo) {
-        "(${schedule.remainingSeats}석)"
-    } else {
-        "(확인 중)"
+    val isRunning = schedule.runningStatus == "RUNNING"
+    val computedRemaining = (schedule.totalSeats - schedule.currentPassengerCount).coerceAtLeast(0)
+    val seatLabel = when {
+        isRunning && schedule.hasSeatInfo -> "(탑승 ${schedule.currentPassengerCount}/${schedule.totalSeats})"
+        isRunning -> "(운행 중)"
+        schedule.runningStatus == "DONE" -> "(운행 종료)"
+        schedule.totalSeats > 0 -> "(${schedule.totalSeats}석)"
+        else -> "(좌석 정보 없음)"
     }
     val seatColor = when {
-        !schedule.hasSeatInfo -> Color(0xFF9AA0A6)
-        schedule.remainingSeats <= 10 -> Color(0xFFE53935)
-        else -> NavyBlue
+        isRunning && schedule.hasSeatInfo && computedRemaining == 0 -> Color(0xFFE53935)
+        isRunning && schedule.hasSeatInfo && computedRemaining <= 5 -> Color(0xFFE65100)
+        isRunning -> NavyBlue
+        else -> Color(0xFF9AA0A6)
     }
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
@@ -1263,13 +1305,24 @@ private fun StudentFavoritesContent(
                                         .clip(RoundedCornerShape(8.dp))
                                         .clickable { onScheduleClick(favorite) }
                                 ) {
-                                    val favoriteSeatLabel = if (favorite.schedule.hasSeatInfo) {
-                                        "(${favorite.schedule.remainingSeats}석)"
-                                    } else {
-                                        "(확인 중)"
+                                    val favSched = favorite.schedule
+                                    val favIsRunning = favSched.runningStatus == "RUNNING"
+                                    val favComputedRemaining = (favSched.totalSeats - favSched.currentPassengerCount).coerceAtLeast(0)
+                                    val favoriteSeatLabel = when {
+                                        favIsRunning && favSched.hasSeatInfo -> "(탑승 ${favSched.currentPassengerCount}/${favSched.totalSeats})"
+                                        favIsRunning -> "(운행 중)"
+                                        favSched.runningStatus == "DONE" -> "(운행 종료)"
+                                        favSched.totalSeats > 0 -> "(${favSched.totalSeats}석)"
+                                        else -> "(좌석 정보 없음)"
+                                    }
+                                    val favoriteSeatColor = when {
+                                        favIsRunning && favSched.hasSeatInfo && favComputedRemaining == 0 -> Color(0xFFE53935)
+                                        favIsRunning && favSched.hasSeatInfo && favComputedRemaining <= 5 -> Color(0xFFE65100)
+                                        favIsRunning -> NavyBlue
+                                        else -> Color(0xFF9AA0A6)
                                     }
                                     Text(
-                                        favorite.schedule.routeName,
+                                        favSched.routeName,
                                         fontSize = 13.sp,
                                         color = NavyBlue,
                                         fontWeight = FontWeight.Bold
@@ -1277,7 +1330,7 @@ private fun StudentFavoritesContent(
                                     Spacer(Modifier.height(10.dp))
                                     Row(verticalAlignment = Alignment.Bottom) {
                                         Text(
-                                            favorite.schedule.departureTime,
+                                            favSched.departureTime,
                                             fontSize = 21.sp,
                                             color = Color(0xFF1F2430),
                                             fontWeight = FontWeight.Bold
@@ -1285,14 +1338,14 @@ private fun StudentFavoritesContent(
                                         Spacer(Modifier.width(6.dp))
                                         Text(
                                             favoriteSeatLabel,
-                                            color = if (favorite.schedule.hasSeatInfo) Color(0xFFE53935) else Color(0xFF9AA0A6),
+                                            color = favoriteSeatColor,
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
                                     Spacer(Modifier.height(10.dp))
                                     Text(
-                                        "탑승 정류장 | ${favorite.schedule.currentLocation}",
+                                        "탑승 정류장 | ${favSched.currentLocation}",
                                         fontSize = 12.sp,
                                         color = Color(0xFF8A8F98)
                                     )
@@ -2215,7 +2268,7 @@ private fun AdminPassengerControlSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AdminSeatMetric("현재 탑승", "${passengers}/${totalSeats}")
-                AdminSeatMetric("남은 여석", "${remainingSeats}석")
+                AdminSeatMetric("잔여 좌석", "${remainingSeats}석")
             }
 
             Spacer(Modifier.height(16.dp))

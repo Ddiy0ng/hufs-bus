@@ -30,9 +30,10 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-private const val BUS_TAG_LOG_TAG = "BusTagApi"
-private const val LIVE_LOG_TAG = "LiveSseApi"
-private const val DRIVER_LOCATION_LOG_TAG = "DriverLocationApi"
+private const val BUS_TAG_LOG_TAG = "TagApi"
+private const val LIVE_LOG_TAG = "SSE"
+private const val DRIVER_LOCATION_LOG_TAG = "GPS"
+private const val SEATS_LOG_TAG = "SeatsApi"
 
 class ShuttleRepository(
     private val apiService: ApiService = RetrofitClient.apiService,
@@ -116,11 +117,11 @@ class ShuttleRepository(
         liveClient.newCall(request).execute().use { response ->
             Log.i(
                 LIVE_LOG_TAG,
-                "subscribeLiveEta timetableId=$timetableId url=$url hasAuth=${token != null} code=${response.code}"
+                "timetableId=$timetableId hasAccessToken=${token != null} responseCode=${response.code}"
             )
             if (!response.isSuccessful) {
                 val errorBody = response.body?.string().orEmpty()
-                Log.e(LIVE_LOG_TAG, "subscribeLiveEta failed timetableId=$timetableId code=${response.code} body=$errorBody")
+                Log.e(LIVE_LOG_TAG, "timetableId=$timetableId responseCode=${response.code} errorBody=$errorBody")
                 throw IOException("HTTP ${response.code}: ${errorBody.ifBlank { "empty error body" }}")
             }
 
@@ -133,7 +134,8 @@ class ShuttleRepository(
                     line.startsWith("event:") -> eventName = line.removePrefix("event:").trim()
                     line.startsWith("data:") -> dataLines += line.removePrefix("data:").trim()
                     line.isBlank() && dataLines.isNotEmpty() -> {
-                        Log.i(LIVE_LOG_TAG, "subscribeLiveEta event=$eventName timetableId=$timetableId")
+                        Log.i(LIVE_LOG_TAG, "timetableId=$timetableId eventType=${eventName ?: "data"}")
+                        // snapshot, location-update, seat-update, bus-update 모두 처리
                         dataLines.toLiveEtaOrNull()?.let { emit(it) }
                         dataLines.clear()
                         eventName = null
@@ -145,7 +147,14 @@ class ShuttleRepository(
 
     suspend fun getBusStatuses(timetableId: Long): Result<BusStatusResponse?> = runCatching {
         val response = apiService.getBusSeats(timetableId)
-        response.payloadSingleOrListFirst()?.let { gson.decode<BusStatusResponse>(it) }
+        val decoded = response.payloadSingleOrListFirst()?.let { gson.decode<BusStatusResponse>(it) }
+        val current = decoded?.currentSeats ?: decoded?.currentPassengers ?: decoded?.passengerCount
+        val total = decoded?.totalSeats
+        val remaining = if (current != null && total != null) (total - current).coerceIn(0, total) else null
+        Log.i(SEATS_LOG_TAG,
+            "timetableId=$timetableId totalSeats=$total currentSeats=$current " +
+            "displayRemainingSeats=$remaining source=seatsApi status=${decoded?.status}")
+        decoded
     }
 
     suspend fun departTimetable(timetableId: Long): Result<DepartResponse?> = runCatching {
@@ -155,33 +164,29 @@ class ShuttleRepository(
     }
 
     suspend fun postBusTag(timetableId: Long, request: BusTagRequest): Result<BusTagResponse?> = runCatching {
-        val endpoint = "/api/buses/$timetableId/tags"
-        val requestJson = gson.toJson(request)
-        Log.i(BUS_TAG_LOG_TAG, "request endpoint=$endpoint timetableId=$timetableId body=$requestJson")
+        val hasToken = !TokenStore.accessToken.isNullOrBlank()
+        Log.i(BUS_TAG_LOG_TAG,
+            "timetableId=$timetableId tagType=${request.type} " +
+            "hasAccessToken=$hasToken requestUrl=/api/buses/$timetableId/tags")
 
         val response = apiService.postBusTagRaw(timetableId, request)
         val responseCode = response.code()
         val responseBody = response.body()
         val errorBody = response.errorBody()?.string().orEmpty()
-        val responseText = responseBody?.toString() ?: errorBody
 
+        Log.i(BUS_TAG_LOG_TAG, "timetableId=$timetableId responseCode=$responseCode")
         if (!response.isSuccessful) {
-            Log.e(
-                BUS_TAG_LOG_TAG,
-                "failed endpoint=$endpoint timetableId=$timetableId body=$requestJson code=$responseCode response=$responseText"
-            )
-            throw IOException("HTTP $responseCode: ${responseText.ifBlank { "empty error body" }}")
+            Log.e(BUS_TAG_LOG_TAG,
+                "timetableId=$timetableId tagType=${request.type} responseCode=$responseCode errorBody=$errorBody")
+            throw IOException("HTTP $responseCode: ${errorBody.ifBlank { "empty error body" }}")
         }
 
         val decoded = responseBody
             ?.payloadSingleOrListFirst()
             ?.let { gson.decode<BusTagResponse>(it) }
-        Log.i(
-            BUS_TAG_LOG_TAG,
-            "success endpoint=$endpoint timetableId=$timetableId body=$requestJson code=$responseCode " +
-                "busId=${decoded?.busId} currentSeats=${decoded?.currentSeats} totalSeats=${decoded?.totalSeats} " +
-                "remainingSeats=${decoded?.remainingSeats} tagType=${decoded?.tagType}"
-        )
+        Log.i(BUS_TAG_LOG_TAG,
+            "timetableId=$timetableId tagType=${decoded?.tagType} currentSeats=${decoded?.currentSeats} " +
+            "totalSeats=${decoded?.totalSeats} remainingSeats=${decoded?.remainingSeats}")
         decoded
     }
 

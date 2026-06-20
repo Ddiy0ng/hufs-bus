@@ -9,8 +9,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -81,15 +83,52 @@ fun DriverMainScreen(
             Text("오늘 운행 일정", fontSize = 15.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
 
-            mockDriverRoutes.forEach { route ->
-                DriverRouteCard(
-                    route   = route,
-                    onClick = {
-                        driverViewModel.selectRoute(route)
-                        onGoOperation(route)
+            when {
+                driverViewModel.driverRoutesLoading -> {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = NavyBlue, strokeWidth = 2.dp)
                     }
-                )
-                Spacer(Modifier.height(10.dp))
+                }
+                driverViewModel.driverRoutesError != null && driverViewModel.driverRoutes.isEmpty() -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { driverViewModel.loadDriverRoutes() }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = driverViewModel.driverRoutesError ?: "서버 응답 없음",
+                            fontSize = 13.sp,
+                            color = Color(0xFFE53935),
+                            modifier = Modifier.weight(1f)
+                        )
+                        Icon(Icons.Filled.Refresh, contentDescription = "새로고침", tint = Color(0xFFE53935))
+                    }
+                }
+                driverViewModel.driverRoutes.isEmpty() -> {
+                    Text(
+                        text = "오늘 배정된 운행 일정이 없습니다",
+                        fontSize = 14.sp,
+                        color = Color(0xFF777777),
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                }
+                else -> {
+                    driverViewModel.driverRoutes.forEach { route ->
+                        DriverRouteCard(
+                            route = route,
+                            onClick = {
+                                driverViewModel.selectRoute(route)
+                                onGoOperation(route)
+                            }
+                        )
+                        Spacer(Modifier.height(10.dp))
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
