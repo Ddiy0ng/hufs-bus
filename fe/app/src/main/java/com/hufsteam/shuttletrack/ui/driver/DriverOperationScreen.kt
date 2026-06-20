@@ -96,7 +96,9 @@ fun DriverOperationScreen(
             driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
             scope.launch { startOperationWithCurrentLocation(context, driverViewModel) }
         } else {
-            driverViewModel.setGpsStartError("위치 권한이 필요합니다. 앱 설정에서 위치 권한을 허용해 주세요")
+            // 권한 없어도 출발 등록 진행 (GPS 없이)
+            driverViewModel.updateOperationMessage("위치 권한 없음 — GPS 없이 출발 등록합니다")
+            scope.launch { driverViewModel.startOperation(null, null) }
         }
     }
 
@@ -556,23 +558,26 @@ private suspend fun startOperationWithCurrentLocation(
     driverViewModel: DriverViewModel
 ) {
     driverViewModel.updateOperationMessage("현재 GPS 위치 확인 중입니다")
+
     if (!hasLocationPermission(context)) {
-        driverViewModel.setGpsStartError("위치 권한이 필요합니다. 앱 설정에서 위치 권한을 허용해 주세요")
+        // GPS 권한 없어도 출발 등록 진행 — GPS 전송만 생략
+        driverViewModel.updateOperationMessage("위치 권한 없음 — GPS 없이 출발 등록합니다")
+        driverViewModel.startOperation(null, null)
         return
     }
     if (!hasEnabledLocationProvider(context)) {
-        driverViewModel.setGpsStartError("휴대폰 위치 서비스가 꺼져 있습니다. 위치를 켠 뒤 다시 눌러주세요")
+        // GPS 꺼져 있어도 출발 등록 진행
+        driverViewModel.updateOperationMessage("위치 서비스 꺼짐 — GPS 없이 출발 등록합니다")
+        driverViewModel.startOperation(null, null)
         return
     }
+
     val location = readCurrentLocation(context)
     if (location == null) {
-        driverViewModel.setGpsStartError("현재 GPS 위치를 확인할 수 없습니다. 실외나 창가에서 다시 시도해 주세요")
-        return
+        // GPS 위치 못 받아도 출발 등록 진행 — 5초마다 백그라운드에서 재시도
+        driverViewModel.updateOperationMessage("GPS 위치 없음 — GPS 없이 출발 등록합니다")
     }
-    driverViewModel.startOperation(
-        latitude = location.latitude,
-        longitude = location.longitude
-    )
+    driverViewModel.startOperation(location?.latitude, location?.longitude)
 }
 
 private fun hasEnabledLocationProvider(context: Context): Boolean {
@@ -583,7 +588,7 @@ private fun hasEnabledLocationProvider(context: Context): Boolean {
 }
 
 @SuppressLint("MissingPermission")
-private suspend fun readCurrentLocation(context: Context): Location? = withTimeoutOrNull(8_000L) {
+private suspend fun readCurrentLocation(context: Context): Location? = withTimeoutOrNull(15_000L) {
     suspendCancellableCoroutine { cont ->
         if (!hasLocationPermission(context)) {
             cont.resume(null)
@@ -598,7 +603,8 @@ private suspend fun readCurrentLocation(context: Context): Location? = withTimeo
             .mapNotNull { provider -> runCatching { locationManager.getLastKnownLocation(provider) }.getOrNull() }
             .maxByOrNull { it.time }
 
-        if (lastKnownLocation != null && System.currentTimeMillis() - lastKnownLocation.time < 10 * 60_000L) {
+        // 30분 이내 캐시된 위치는 그대로 사용 (기존 10분에서 확대)
+        if (lastKnownLocation != null && System.currentTimeMillis() - lastKnownLocation.time < 30 * 60_000L) {
             cont.resume(lastKnownLocation)
             return@suspendCancellableCoroutine
         }
@@ -611,8 +617,10 @@ private suspend fun readCurrentLocation(context: Context): Location? = withTimeo
 
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                if (cont.isActive) cont.resume(location)
-                locationManager.removeUpdates(this)
+                if (cont.isActive) {
+                    locationManager.removeUpdates(this)
+                    cont.resume(location)
+                }
             }
 
             @Deprecated("Deprecated in Android API")
@@ -620,11 +628,18 @@ private suspend fun readCurrentLocation(context: Context): Location? = withTimeo
 
             override fun onProviderEnabled(provider: String) = Unit
 
-            override fun onProviderDisabled(provider: String) = Unit
+            override fun onProviderDisabled(provider: String) {
+                // 프로바이더 꺼지면 lastKnown으로 폴백
+                if (cont.isActive) {
+                    locationManager.removeUpdates(this)
+                    cont.resume(lastKnownLocation)
+                }
+            }
         }
 
         runCatching {
-            locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+            // requestSingleUpdate는 API 29+ deprecated — requestLocationUpdates 사용
+            locationManager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper())
         }.onFailure {
             if (cont.isActive) cont.resume(lastKnownLocation)
         }

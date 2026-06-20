@@ -399,7 +399,7 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
 
 // ── 출발 등록 / 운행 종료 ──────────────────────────────────
 
-    fun startOperation(latitude: Double, longitude: Double) {
+    fun startOperation(latitude: Double? = null, longitude: Double? = null) {
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val route = selectedRoute ?: run {
             operationMessage = "선택된 노선이 없습니다"
@@ -485,17 +485,16 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 ?: shuttleRepository.getBusStatuses(timetableId).getOrNull()?.busId
                 ?: route.busId
 
-            if (busId == null) {
-                isGpsTracking = false
-                operationMessage = "출발 등록은 완료됐지만 busId를 받지 못했습니다. GPS 전송을 보류합니다."
-                Log.w(TAG_GPS, "startOperation skipped: busId is null, timetableId=$timetableId")
-                return@launch
+            // busId 없어도 운행 상태는 전환 — GPS만 비활성
+            val hasBusId = busId != null
+            if (!hasBusId) {
+                Log.w(TAG_GPS, "startOperation: busId is null, GPS tracking disabled. timetableId=$timetableId")
             }
 
-            selectedRoute = route.copy(busId = busId)
-
-            activeBusIdsByTimetableId =
-                activeBusIdsByTimetableId + (timetableId to busId)
+            if (busId != null) {
+                selectedRoute = route.copy(busId = busId)
+                activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
+            }
 
             runningStateByTimetableId =
                 runningStateByTimetableId + (timetableId to true)
@@ -505,28 +504,36 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
             prefs.edit().remove("finished_$timetableId").apply()
 
             operationState = OperationState.OPERATING
-            isGpsTracking = true
-            lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+            isGpsTracking = hasBusId
             actualDepartureTime = depart?.actualDepartureTime?.take(5) ?: now
-            operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
 
-            shuttleRepository.postDriverLocation(
-                busId = busId,
-                latitude = latitude,
-                longitude = longitude
-            ).onSuccess {
-                operationMessage = "GPS 위치가 서버에 전송되었습니다"
-                Log.i(
-                    TAG_GPS,
-                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200"
-                )
-            }.onFailure { throwable ->
-                operationMessage = "GPS 전송 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
-                Log.e(
-                    TAG_GPS,
-                    "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}",
-                    throwable
-                )
+            if (busId != null && latitude != null && longitude != null) {
+                lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
+                operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
+
+                shuttleRepository.postDriverLocation(
+                    busId = busId,
+                    latitude = latitude,
+                    longitude = longitude
+                ).onSuccess {
+                    operationMessage = "GPS 위치가 서버에 전송되었습니다"
+                    Log.i(
+                        TAG_GPS,
+                        "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude responseCode=200"
+                    )
+                }.onFailure { throwable ->
+                    operationMessage = "GPS 전송 실패: ${throwable.message ?: "서버 응답을 확인해 주세요"}"
+                    Log.e(
+                        TAG_GPS,
+                        "timetableId=$timetableId busId=$busId latitude=$latitude longitude=$longitude errorBody=${throwable.message}",
+                        throwable
+                    )
+                }
+            } else if (busId != null) {
+                operationMessage = "출발 등록 완료 (GPS 좌표 없음, 5초 후 백그라운드 전송 재시도)"
+                Log.w(TAG_GPS, "startOperation: no GPS coords, will retry via periodic update. timetableId=$timetableId busId=$busId")
+            } else {
+                operationMessage = "출발 등록 완료 (busId 없음, GPS 비활성)"
             }
 
         }
