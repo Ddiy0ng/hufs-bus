@@ -248,12 +248,16 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                     val status = response?.status?.trim()?.uppercase() ?: "UNKNOWN"
                     val busId = response?.busId
                     val totalSeats = response?.totalSeats ?: selectedRoute?.totalSeats ?: 45
-                    val currentSeats = response?.currentSeats
-                        ?: response?.currentPassengers
-                        ?: response?.passengerCount
-                        ?: response?.remainingSeats?.let { totalSeats - it }
-                        ?: response?.availableSeats?.let { totalSeats - it }
-                        ?: passengerCount
+                    val currentSeats: Int = if (status == "RUNNING") {
+                        response?.currentSeats
+                            ?: response?.currentPassengers
+                            ?: response?.passengerCount
+                            ?: response?.remainingSeats?.let { totalSeats - it }
+                            ?: response?.availableSeats?.let { totalSeats - it }
+                            ?: passengerCount
+                    } else {
+                        response?.currentSeats ?: response?.currentPassengers ?: response?.passengerCount ?: 0
+                    }
 
                     val safeCurrentSeats = currentSeats.coerceIn(0, totalSeats)
                     val remainingSeats = (totalSeats - safeCurrentSeats).coerceIn(0, totalSeats)
@@ -316,6 +320,7 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                         "WAITING" -> {
                             if (runningStateByTimetableId[timetableId] != true) {
                                 operationState = OperationState.BEFORE_DEPARTURE
+                                passengerCount = 0
                                 isGpsTracking = false
                                 operationMessage = "출발 전 상태입니다"
                             }
@@ -709,6 +714,14 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         isGpsTracking = false
         operationMessage = "운행 전입니다"
         lastGpsText = null
+    }
+
+    fun resetForNewDeparture() {
+        val timetableId = selectedRoute?.timetableId() ?: return
+        locallyFinishedTimetableIds.remove(timetableId)
+        prefs.edit().remove("finished_$timetableId").apply()
+        runningStateByTimetableId = runningStateByTimetableId + (timetableId to false)
+        reset()
     }
 
 // ── 탑승/하차 서버 반영 ───────────────────────────────────
