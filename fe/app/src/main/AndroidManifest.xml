@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <!-- 알림 권한 (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 정확한 알람 권한 (출발 알림용, Android 12+) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <!-- NFC 권한 (탑승 집계용) -->
     <uses-permission android:name="android.permission.NFC" />
 
@@ -42,6 +44,11 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- 출발 알림 브로드캐스트 수신기 -->
+        <receiver
+            android:name=".service.DepartureAlarmReceiver"
+            android:exported="false" />
 
     </application>
 

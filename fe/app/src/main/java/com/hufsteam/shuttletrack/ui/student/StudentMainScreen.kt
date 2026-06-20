@@ -63,6 +63,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hufsteam.shuttletrack.data.remote.ShuttleApiClient
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
+import com.hufsteam.shuttletrack.service.NotificationScheduler
+import com.hufsteam.shuttletrack.service.ScheduledNotification
 import com.hufsteam.shuttletrack.ui.auth.AuthViewModel
 import com.hufsteam.shuttletrack.ui.common.BusIcon
 import com.hufsteam.shuttletrack.data.model.UserRole
@@ -94,7 +96,9 @@ data class BusSchedule(
     val totalSeats: Int,
     val currentLocation: String,
     val routeStops: List<String> = emptyList(),
-    val campusType: String = "미분류"
+    val campusType: String = "미분류",
+    val hasSeatInfo: Boolean = false,
+    val seatInfoSource: String = "pending"
 )
 
 data class FavoriteSchedule(
@@ -147,6 +151,7 @@ fun StudentMainScreen(
     driverViewModel: DriverViewModel,
     studentBusViewModel: StudentBusViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
 ) {
+    val context = LocalContext.current
     val studentUiState = studentBusViewModel.uiState
     val baseOffCampusSchedules = studentUiState.offCampusSchedules
     val baseOnCampusSchedules = studentUiState.onCampusSchedules
@@ -161,6 +166,29 @@ fun StudentMainScreen(
     var favoriteTarget by remember { mutableStateOf<BusSchedule?>(null) }
     val liveSelectedSchedule = selectedSchedule.withLivePassengerState(driverViewModel)
     val liveRouteDetail = studentUiState.selectedRouteDetail ?: mockRouteDetailFor(liveSelectedSchedule).withSeatText(liveSelectedSchedule)
+
+    // 즐겨찾기 변경 시 출발 알림 재스케줄링
+    LaunchedEffect(studentUiState.favoriteSchedules) {
+        val notifications = studentUiState.favoriteSchedules.map { fav ->
+            ScheduledNotification(
+                scheduleId = fav.schedule.id,
+                routeName = fav.schedule.routeName,
+                departureTime = fav.schedule.departureTime,
+                days = fav.days
+            )
+        }
+        NotificationScheduler.scheduleFavoriteNotifications(context, notifications)
+    }
+
+    // 시간표/즐겨찾기 화면에서 15초마다 여석 자동 갱신
+    LaunchedEffect(currentScreen) {
+        if (currentScreen == StudentScreen.TIMETABLE || currentScreen == StudentScreen.FAVORITES) {
+            while (true) {
+                delay(15_000)
+                studentBusViewModel.refreshSeatStatuses()
+            }
+        }
+    }
 
     LaunchedEffect(liveOffCampusSchedules, liveOnCampusSchedules) {
         val allSchedules = liveOffCampusSchedules + liveOnCampusSchedules
@@ -293,6 +321,27 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
         totalSeats = FIXED_TOTAL_SEATS,
         remainingSeats = remainingSeats.coerceIn(0, FIXED_TOTAL_SEATS)
     )
+    // timetableId가 있으면 per-timetable 좌석 상태 맵을 우선 확인 (동시 여러 버스 지원)
+    val tid = timetableId
+    if (tid != null) {
+        val seatState = driverViewModel.seatStateByTimetableId[tid]
+        if (seatState != null && seatState.status != "WAITING") {
+            val currentPassengers = seatState.currentSeats.coerceIn(0, seatState.totalSeats)
+            val liveLocation = when (seatState.status) {
+                "RUNNING" -> "운행 중입니다"
+                "DONE" -> "운행이 종료되었습니다"
+                else -> currentLocation
+            }
+            return normalized.copy(
+                totalSeats = seatState.totalSeats,
+                remainingSeats = (seatState.totalSeats - currentPassengers).coerceIn(0, seatState.totalSeats),
+                currentLocation = liveLocation,
+                hasSeatInfo = true,
+                seatInfoSource = "local-driver-state"
+            )
+        }
+    }
+    // fallback: selectedRoute 단일 비교 (timetableId 없는 구형 호환)
     val route = driverViewModel.selectedRoute ?: return normalized
     val sameTimetable = route.timetableId != null && timetableId != null && route.timetableId == timetableId
     val sameLegacyRoute = route.timetableId == null && timetableId == null &&
@@ -308,7 +357,9 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
     }
     return normalized.copy(
         remainingSeats = (FIXED_TOTAL_SEATS - currentPassengers).coerceIn(0, FIXED_TOTAL_SEATS),
-        currentLocation = liveLocation
+        currentLocation = liveLocation,
+        hasSeatInfo = true,
+        seatInfoSource = "local-driver-state"
     )
 }
 
@@ -584,6 +635,16 @@ private fun EmptyStateMessage(message: String) {
 
 @Composable
 private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
+    val seatLabel = if (schedule.hasSeatInfo) {
+        "(${schedule.remainingSeats}석)"
+    } else {
+        "(확인 중)"
+    }
+    val seatColor = when {
+        !schedule.hasSeatInfo -> Color(0xFF9AA0A6)
+        schedule.remainingSeats <= 10 -> Color(0xFFE53935)
+        else -> NavyBlue
+    }
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         shape    = RoundedCornerShape(14.dp),
@@ -595,10 +656,10 @@ private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
                 Text(schedule.departureTime, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111111))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "(${schedule.remainingSeats}석)",
+                    seatLabel,
                     fontSize   = 15.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = if (schedule.remainingSeats <= 10) Color(0xFFE53935) else NavyBlue
+                    color      = seatColor
                 )
             }
             Spacer(Modifier.height(8.dp))
@@ -1202,6 +1263,11 @@ private fun StudentFavoritesContent(
                                         .clip(RoundedCornerShape(8.dp))
                                         .clickable { onScheduleClick(favorite) }
                                 ) {
+                                    val favoriteSeatLabel = if (favorite.schedule.hasSeatInfo) {
+                                        "(${favorite.schedule.remainingSeats}석)"
+                                    } else {
+                                        "(확인 중)"
+                                    }
                                     Text(
                                         favorite.schedule.routeName,
                                         fontSize = 13.sp,
@@ -1218,8 +1284,8 @@ private fun StudentFavoritesContent(
                                         )
                                         Spacer(Modifier.width(6.dp))
                                         Text(
-                                            "(${favorite.schedule.remainingSeats}석)",
-                                            color = Color(0xFFE53935),
+                                            favoriteSeatLabel,
+                                            color = if (favorite.schedule.hasSeatInfo) Color(0xFFE53935) else Color(0xFF9AA0A6),
                                             fontSize = 18.sp,
                                             fontWeight = FontWeight.Bold
                                         )
@@ -2253,12 +2319,16 @@ private suspend fun buildAdminOperationSnapshot(
     val serverPassengers = busStatus?.currentSeats
         ?: busStatus?.currentPassengers
         ?: busStatus?.passengerCount
-        ?: (busStatus?.remainingSeats ?: busStatus?.availableSeats)?.let { totalSeats - it }
-        ?: (totalSeats - schedule.remainingSeats)
+        ?: 0
 
     val passengers = serverPassengers.coerceIn(0, totalSeats)
     val route = schedule
-        .copy(totalSeats = totalSeats, remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats))
+        .copy(
+            totalSeats = totalSeats,
+            remainingSeats = (totalSeats - passengers).coerceIn(0, totalSeats),
+            hasSeatInfo = true,
+            seatInfoSource = "seats API"
+        )
         .toDriverRoute()
         .copy(busId = busStatus?.busId ?: schedule.id.toLong())
 

@@ -104,7 +104,7 @@ fun DriverOperationScreen(
     LaunchedEffect(state, isGpsTracking, route.id) {
         if (state == OperationState.OPERATING && isGpsTracking) {
             while (true) {
-                delay(10_000)
+                delay(5_000)
                 val location = readCurrentLocation(context)
                 if (location != null) {
                     driverViewModel.sendCurrentLocation(

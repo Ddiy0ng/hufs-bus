@@ -1,5 +1,6 @@
 package com.hufsteam.shuttletrack.ui.student
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -22,6 +23,7 @@ import kotlinx.coroutines.launch
 private const val OFF_CAMPUS = 1
 private const val ON_CAMPUS = 0
 private const val FIXED_TOTAL_SEATS = 45
+private const val SEAT_DISPLAY_LOG_TAG = "SeatDisplay"
 
 data class StopArrivalInfo(
     val stopName: String,
@@ -154,6 +156,20 @@ class StudentBusViewModel(
         }
     }
 
+    fun refreshSeatStatuses() {
+        val off = uiState.offCampusSchedules
+        val on = uiState.onCampusSchedules
+        if (off.isEmpty() && on.isEmpty()) return
+        viewModelScope.launch {
+            val updatedOff = repository.loadSeatStatuses(off)
+            val updatedOn = repository.loadSeatStatuses(on)
+            uiState = uiState.copy(
+                offCampusSchedules = updatedOff,
+                onCampusSchedules = updatedOn
+            )
+        }
+    }
+
     fun clearError() {
         uiState = uiState.copy(errorMessage = null)
     }
@@ -173,12 +189,14 @@ class StudentBusRepository(
         val offResult = shuttleRepository.getTimetable("OUT_CAMPUS")
         val onResult = shuttleRepository.getTimetable("IN_CAMPUS")
 
-        val offSchedules = offResult.getOrNull()
+        val offBaseSchedules = offResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOffCampusSchedules, "교외") }
             .orEmpty()
-        val onSchedules = onResult.getOrNull()
+        val onBaseSchedules = onResult.getOrNull()
             ?.mapIndexed { index, dto -> dto.toSchedule(index, mockOnCampusSchedules, "교내") }
             .orEmpty()
+        val offSchedules = offBaseSchedules.withSeatStatuses()
+        val onSchedules = onBaseSchedules.withSeatStatuses()
         val errorMessage = when {
             offResult.isFailure && onResult.isFailure -> "서버 시간표를 불러오지 못했습니다."
             offResult.isFailure -> "교외 시간표를 불러오지 못했습니다."
@@ -209,10 +227,11 @@ class StudentBusRepository(
     }
 
     suspend fun loadRouteDetail(schedule: BusSchedule): RouteDetail {
-        val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+        val timetableId = schedule.timetableId ?: schedule.id.toLong()
+        val busStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
         val isRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
         val liveEta = if (isRunning) {
-            shuttleRepository.getLiveEta(schedule.id.toLong()).getOrNull()
+            shuttleRepository.getLiveEta(timetableId).getOrNull()
         } else {
             null
         }
@@ -228,10 +247,11 @@ class StudentBusRepository(
     }
 
     fun subscribeRouteDetail(schedule: BusSchedule) = flow {
+        val timetableId = schedule.timetableId ?: schedule.id.toLong()
         emit(loadRouteDetail(schedule))
-        shuttleRepository.subscribeLiveEta(schedule.id.toLong())
+        shuttleRepository.subscribeLiveEta(timetableId)
             .collect { liveEta ->
-                val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
+                val busStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
                 val driverLocation = busStatus?.busId?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
                 emit(routeDetailFromApi(schedule, liveEta, busStatus, driverLocation))
             }
@@ -261,10 +281,6 @@ class StudentBusRepository(
             if (start.isNotBlank() && end.isNotBlank()) "$start → $end" else fallbackSchedule?.routeName ?: "노선"
         }
 
-        val seatLeft = firstInt(remainingSeats, availableSeats, seatLeft)
-            ?: fallbackSchedule?.remainingSeats
-            ?: FIXED_TOTAL_SEATS
-
         val resolvedTimetableId = firstLong(timetableId, specificTimetableId, id)
 
         return BusSchedule(
@@ -272,39 +288,67 @@ class StudentBusRepository(
             timetableId = resolvedTimetableId,
             routeName = firstText(routeName, route, fallbackRoute),
             departureTime = firstText(departureTime, departAt, time, plannedDeparture, fallbackSchedule?.departureTime, "00:00"),
-            remainingSeats = seatLeft.coerceIn(0, FIXED_TOTAL_SEATS),
+            remainingSeats = FIXED_TOTAL_SEATS,
             totalSeats = FIXED_TOTAL_SEATS,
             currentLocation = firstText(currentLocation, currentStop, "운행 전"),
             routeStops = routeStops.ifEmpty { fallbackSchedule?.routeStops.orEmpty() },
-            campusType = resolveCampusType(inOutCampus, routeName, route, fallbackRoute, defaultCampusType)
+            campusType = resolveCampusType(inOutCampus, routeName, route, fallbackRoute, defaultCampusType),
+            hasSeatInfo = false,
+            seatInfoSource = "pending"
         )
     }
 
-    private suspend fun List<BusSchedule>.withNearbySeatStatuses(maxItems: Int = 24): List<BusSchedule> {
-        val targetIds = sortedBy { it.departureTime.distanceFromNowMinutes() }
-            .take(maxItems)
-            .map { it.id }
-            .toSet()
-        return map { schedule ->
-            if (schedule.id in targetIds) schedule.withLatestSeatStatus() else schedule
-        }
+    suspend fun loadSeatStatuses(schedules: List<BusSchedule>): List<BusSchedule> =
+        schedules.withSeatStatuses()
+
+    private suspend fun List<BusSchedule>.withSeatStatuses(): List<BusSchedule> {
+        return map { schedule -> schedule.withLatestSeatStatus() }
     }
 
     private suspend fun BusSchedule.withLatestSeatStatus(): BusSchedule {
-        val busStatus = shuttleRepository.getBusStatuses(id.toLong()).getOrNull() ?: return this
+        val statusResult = shuttleRepository.getBusStatuses(timetableId ?: id.toLong())
+        val busStatus = statusResult.getOrNull()
+        if (busStatus == null) {
+            logSeatDisplay(
+                schedule = this,
+                totalSeats = totalSeats,
+                currentSeats = null,
+                displayRemainingSeats = null,
+                source = if (statusResult.isFailure) "error" else "cached",
+                error = statusResult.exceptionOrNull()
+            )
+            return copy(hasSeatInfo = false, seatInfoSource = if (statusResult.isFailure) "error" else "cached")
+        }
         val total = busStatus.totalSeats ?: totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
-        val remaining = firstInt(busStatus.remainingSeats, busStatus.availableSeats)
-            ?: firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
-                ?.let { (total - it).coerceIn(0, total) }
-            ?: remainingSeats.coerceIn(0, total)
+        val current = firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
+        if (current == null) {
+            logSeatDisplay(
+                schedule = this,
+                totalSeats = total,
+                currentSeats = null,
+                displayRemainingSeats = null,
+                source = "error"
+            )
+            return copy(totalSeats = total, hasSeatInfo = false, seatInfoSource = "error")
+        }
+        val remaining = (total - current).coerceIn(0, total)
         val locationText = busStatus.currentStopName
             ?.takeIf { it.isNotBlank() }
             ?.let { "현재 위치 | $it" }
             ?: currentLocation
+        logSeatDisplay(
+            schedule = this,
+            totalSeats = total,
+            currentSeats = current,
+            displayRemainingSeats = remaining,
+            source = "seats API"
+        )
         return copy(
             totalSeats = total,
             remainingSeats = remaining,
-            currentLocation = locationText
+            currentLocation = locationText,
+            hasSeatInfo = true,
+            seatInfoSource = "seats API"
         )
     }
 
@@ -412,16 +456,16 @@ class StudentBusRepository(
             ?: liveEta?.totalSeats
             ?: schedule.totalSeats.takeIf { it > 0 }
             ?: FIXED_TOTAL_SEATS
-        val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats)
-            ?: liveEta?.remainingSeats
-            ?: firstInt(
-                busStatus?.currentSeats,
-                busStatus?.currentPassengers,
-                busStatus?.passengerCount,
-                liveEta?.currentSeats,
-                driverLocation?.currentSeats
-            )?.let { (totalSeats - it).coerceIn(0, totalSeats) }
-            ?: schedule.remainingSeats.coerceIn(0, totalSeats)
+        val currentPassengers = firstInt(
+            busStatus?.currentSeats,
+            busStatus?.currentPassengers,
+            busStatus?.passengerCount,
+            liveEta?.currentSeats,
+            driverLocation?.currentSeats
+        )
+        val remainingSeats = currentPassengers?.let { (totalSeats - it).coerceIn(0, totalSeats) }
+            ?: if (schedule.hasSeatInfo) schedule.remainingSeats.coerceIn(0, totalSeats) else totalSeats
+        val hasSeatInfo = currentPassengers != null || schedule.hasSeatInfo
         val statusText = when {
             statusIsRunning -> "운행 중"
             statusIsDone -> "운행 종료"
@@ -450,7 +494,7 @@ class StudentBusRepository(
             normalized to StopArrivalInfo(
                 stopName = normalized,
                 arrivalText = arrival,
-                seatText = "${remainingSeats.toString().padStart(2, '0')}석"
+                seatText = if (hasSeatInfo) "${remainingSeats.toString().padStart(2, '0')}석" else "확인 중"
             )
         }
         val safeLastIndex = stops.lastIndex.coerceAtLeast(0)
@@ -608,6 +652,24 @@ class StudentBusRepository(
                 joined.contains("판교") || joined.contains("경기광주") || joined.contains("외대(글)") -> "교외"
             else -> "미분류"
         }
+    }
+}
+
+private fun logSeatDisplay(
+    schedule: BusSchedule,
+    totalSeats: Int,
+    currentSeats: Int?,
+    displayRemainingSeats: Int?,
+    source: String,
+    error: Throwable? = null
+) {
+    val msg = "SeatDisplay id=${schedule.id} timetableId=${schedule.timetableId} " +
+        "route=${schedule.routeName} total=$totalSeats current=$currentSeats " +
+        "remaining=$displayRemainingSeats source=$source"
+    if (error != null) {
+        Log.e(SEAT_DISPLAY_LOG_TAG, msg, error)
+    } else {
+        Log.i(SEAT_DISPLAY_LOG_TAG, msg)
     }
 }
 
