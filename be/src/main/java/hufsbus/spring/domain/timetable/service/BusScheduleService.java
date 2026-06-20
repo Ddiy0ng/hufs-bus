@@ -159,7 +159,7 @@ public class BusScheduleService {
         Bus bus = Bus.builder()
                 .busNumber("T" + timetable.getId())
                 .totalSeats(Bus.DEFAULT_SEATS)
-                .currentSeats(Bus.DEFAULT_SEATS)
+                .currentSeats(0)
                 .status(Bus.BusStatus.WAITING)
                 .timetable(timetable)
                 .build();
