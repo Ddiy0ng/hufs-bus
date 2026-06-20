@@ -10,6 +10,7 @@ data class LoginRequest(
 data class SignupRequest(
     val email: String,
     val password: String,
+    val name: String? = null,
     val privacyTermAgree: Boolean,
     val serviceTermAgree: Boolean
 )
@@ -70,9 +71,13 @@ data class RouteStopResponse(
 
 data class LiveEtaResponse(
     val timetableId: Long? = null,
+    val busId: Long? = null,
     val plannedDepartureTime: String? = null,
     val actualDepartureTime: String? = null,
+    val totalSeats: Int? = null,
     val currentSeats: Int? = null,
+    val remainingSeats: Int? = null,
+    val tagType: String? = null,
     val status: String? = null,
     val currentLocation: LiveLocationResponse? = null,
     val etaText: String? = null,

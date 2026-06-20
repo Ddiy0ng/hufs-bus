@@ -408,8 +408,12 @@ class StudentBusRepository(
             0f
         }
 
-        val totalSeats = busStatus?.totalSeats ?: schedule.totalSeats.takeIf { it > 0 } ?: FIXED_TOTAL_SEATS
+        val totalSeats = busStatus?.totalSeats
+            ?: liveEta?.totalSeats
+            ?: schedule.totalSeats.takeIf { it > 0 }
+            ?: FIXED_TOTAL_SEATS
         val remainingSeats = firstInt(busStatus?.remainingSeats, busStatus?.availableSeats)
+            ?: liveEta?.remainingSeats
             ?: firstInt(
                 busStatus?.currentSeats,
                 busStatus?.currentPassengers,
