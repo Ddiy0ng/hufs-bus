@@ -264,7 +264,7 @@ class StudentBusRepository(
     private fun TimetableResponse.toSchedule(index: Int, fallback: List<BusSchedule>, defaultCampusType: String = ""): BusSchedule {
         val stopPoints = (routeList ?: stops).toStopPoints()
         val routeStops = stopPoints.map { it.name }
-        val fallbackSchedule = fallback.getOrNull(index % fallback.size)
+        val fallbackSchedule = fallback.takeIf { it.isNotEmpty() }?.let { it[index % it.size] }
         val fallbackRoute = if (routeStops.size >= 2) {
             "${routeStops.first().cleanStopName()} → ${routeStops.last().cleanStopName()}"
         } else {
@@ -333,18 +333,9 @@ class StudentBusRepository(
             )
         }
 
-        // 운행 중: 탑승 인원 계산 (1순위: currentSeats, 2순위: totalSeats - remainingSeats)
-        val serverRemaining = firstInt(busStatus.remainingSeats, busStatus.availableSeats)
+        // 운행 중: currentSeats는 백엔드 기준 현재 탑승 수입니다.
         val current = firstInt(busStatus.currentSeats, busStatus.currentPassengers, busStatus.passengerCount)
-        val currentPassengerCount: Int
-        val remaining: Int
-        if (current != null) {
-            currentPassengerCount = current.coerceIn(0, total)
-            remaining = (total - currentPassengerCount).coerceIn(0, total)
-        } else if (serverRemaining != null) {
-            remaining = serverRemaining.coerceIn(0, total)
-            currentPassengerCount = (total - remaining).coerceIn(0, total)
-        } else {
+        if (current == null) {
             logSeatDisplay(
                 schedule = this,
                 totalSeats = total,
@@ -355,6 +346,8 @@ class StudentBusRepository(
             )
             return copy(totalSeats = total, runningStatus = "RUNNING", hasSeatInfo = false, seatInfoSource = "error")
         }
+        val currentPassengerCount = current.coerceIn(0, total)
+        val remaining = (total - currentPassengerCount).coerceIn(0, total)
 
         val locationText = busStatus.currentStopName
             ?.takeIf { it.isNotBlank() }
@@ -730,4 +723,3 @@ private fun JsonObject.findDouble(key: String): Double? {
     val element = get(key) ?: return null
     return if (element.isJsonPrimitive) element.asString.toDoubleOrNull() else null
 }
-

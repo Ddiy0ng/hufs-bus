@@ -309,22 +309,21 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
         val now = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         val route = selectedRoute
         val timetableId = route?.timetableId() ?: 1L
-        actualDepartureTime = now
-        operationState = OperationState.OPERATING
-        isGpsTracking = true
         lastGpsText = "%.6f, %.6f".format(Locale.US, latitude, longitude)
-        operationMessage = "출발 등록 및 GPS 전송 중입니다"
+        operationMessage = "출발 등록 중입니다"
         Log.d(TAG_DRIVER_SCREEN, "운행 시작, passengerCount=$passengerCount timetableId=$timetableId")
 
         viewModelScope.launch {
             var departBusId: Long? = null
+            var departSucceeded = false
             shuttleRepository.departTimetable(timetableId)
                 .onSuccess { depart ->
+                    departSucceeded = true
                     departBusId = depart?.busId
                     Log.i(TAG_DEPART,
                         "timetableId=$timetableId busId=${depart?.busId} status=${depart?.busStatus}")
                     actualDepartureTime = depart?.actualDepartureTime?.take(5) ?: now
-                    operationMessage = "출발 등록 완료, GPS 위치를 전송 중입니다"
+                    operationMessage = "출발 등록 완료, busId 확인 중입니다"
                     val resolvedBusId = departBusId
                     if (resolvedBusId != null) {
                         selectedRoute = route?.copy(busId = resolvedBusId)
@@ -335,15 +334,16 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 .onFailure { throwable ->
                     Log.e(TAG_DEPART, "timetableId=$timetableId failed: ${throwable.message}")
-                    operationMessage = "출발 등록 실패, GPS 전송을 계속 시도합니다: ${throwable.message ?: "서버 응답 확인 필요"}"
+                    operationMessage = "출발 등록 실패: ${throwable.message ?: "서버 응답 확인 필요"}"
                 }
+            if (!departSucceeded) return@launch
 
             val busId = departBusId
                 ?: activeBusIdsByTimetableId[timetableId]
                 ?: shuttleRepository.getBusStatuses(timetableId).getOrNull()?.busId
                 ?: route?.busId
             if (busId == null) {
-                operationMessage = "출발 등록 완료, busId 조회 실패로 GPS 전송을 보류했습니다"
+                operationMessage = "출발 등록 완료, busId 조회 실패로 운행 시작을 보류했습니다"
                 Log.w(TAG_GPS, "startOperation skipped: busId is null, timetableId=$timetableId")
                 return@launch
             }
@@ -351,6 +351,10 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
             activeBusIdsByTimetableId = activeBusIdsByTimetableId + (timetableId to busId)
             runningStateByTimetableId = runningStateByTimetableId + (timetableId to true)
             persistRunningState(timetableId, true, busId)
+            operationState = OperationState.OPERATING
+            isGpsTracking = true
+            actualDepartureTime = actualDepartureTime ?: now
+            operationMessage = "운행 시작 완료, GPS 위치를 전송 중입니다"
 
             shuttleRepository.postDriverLocation(
                 busId = busId,
@@ -427,7 +431,6 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                     val passengers = response?.currentSeats
                         ?: response?.currentPassengers
                         ?: response?.passengerCount
-                        ?: (response?.remainingSeats ?: response?.availableSeats)?.let { total - it }
                     if (passengers != null) {
                         passengerCount = passengers.coerceIn(0, total)
                     }
@@ -541,7 +544,6 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                                 ?: seatResponse?.currentPassengers
                                 ?: seatResponse?.passengerCount
                                 ?: response?.currentSeats
-                                ?: response?.remainingSeats?.let { total - it }
                             if (current != null) {
                                 passengerCount = current.coerceIn(0, total)
                             }
