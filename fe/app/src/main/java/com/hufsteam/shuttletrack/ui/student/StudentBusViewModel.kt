@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.hufsteam.shuttletrack.data.remote.dto.BusStatusResponse
+import com.hufsteam.shuttletrack.data.remote.dto.DriverLocationResponse
 import com.hufsteam.shuttletrack.data.remote.dto.FavoriteResponse
 import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
@@ -209,15 +210,21 @@ class StudentBusRepository(
 
     suspend fun loadRouteDetail(schedule: BusSchedule): RouteDetail {
         val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
-        val liveEta = if (busStatus?.status?.trim()?.uppercase() == "RUNNING") {
+        val isRunning = busStatus?.status?.trim()?.uppercase() == "RUNNING"
+        val liveEta = if (isRunning) {
             shuttleRepository.getLiveEta(schedule.id.toLong()).getOrNull()
+        } else {
+            null
+        }
+        val driverLocation = if (isRunning) {
+            busStatus?.busId?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
         } else {
             null
         }
         if (liveEta == null && busStatus == null && schedule.routeStops.isEmpty()) {
             return mockRouteDetailFor(schedule)
         }
-        return routeDetailFromApi(schedule, liveEta, busStatus)
+        return routeDetailFromApi(schedule, liveEta, busStatus, driverLocation)
     }
 
     fun subscribeRouteDetail(schedule: BusSchedule) = flow {
@@ -225,7 +232,8 @@ class StudentBusRepository(
         shuttleRepository.subscribeLiveEta(schedule.id.toLong())
             .collect { liveEta ->
                 val busStatus = shuttleRepository.getBusStatuses(schedule.id.toLong()).getOrNull()
-                emit(routeDetailFromApi(schedule, liveEta, busStatus))
+                val driverLocation = busStatus?.busId?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
+                emit(routeDetailFromApi(schedule, liveEta, busStatus, driverLocation))
             }
     }
 
@@ -335,14 +343,17 @@ class StudentBusRepository(
     private fun routeDetailFromApi(
         schedule: BusSchedule,
         liveEta: LiveEtaResponse?,
-        busStatus: BusStatusResponse?
+        busStatus: BusStatusResponse?,
+        driverLocation: DriverLocationResponse? = null
     ): RouteDetail {
-        val status = firstText(liveEta?.status, busStatus?.status).uppercase()
+        val status = firstText(liveEta?.status, busStatus?.status, driverLocation?.status).uppercase()
         val statusIsRunning = status == "RUNNING"
         val statusIsDone = status == "DONE"
         val liveCurrentStopName = firstText(liveEta?.currentStopName, liveEta?.currentStop)
         val hasTrackedStop = busStatus?.currentStopSequence != null ||
             !busStatus?.currentStopName.isNullOrBlank() ||
+            driverLocation?.currentStopSequence != null ||
+            !driverLocation?.currentStopName.isNullOrBlank() ||
             liveEta?.currentStopSequence != null ||
             liveCurrentStopName.isNotBlank()
         val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop)
@@ -350,7 +361,7 @@ class StudentBusRepository(
         val fallbackStops = schedule.routeStops.ifEmpty { mockRouteDetailFor(schedule).stops }
         val stopPoints = apiStopPoints.ifEmpty { fallbackStops.map { RouteStopPoint(it, null, null) } }
         val stops = stopPoints.map { it.name }
-        val currentStopName = firstText(busStatus?.currentStopName, liveCurrentStopName)
+        val currentStopName = firstText(busStatus?.currentStopName, driverLocation?.currentStopName, liveCurrentStopName)
         val currentStopNameIndex = currentStopName.takeIf { it.isNotBlank() }?.let { currentStop ->
             stops.indexOfFirst { it.cleanStopName() == currentStop.cleanStopName() }
         }?.takeIf { it >= 0 }
@@ -362,6 +373,7 @@ class StudentBusRepository(
                 liveEta?.currentIndex,
                 liveEta?.currentStopSequence?.minus(1),
                 busStatus?.currentStopSequence?.minus(1),
+                driverLocation?.currentStopSequence?.minus(1),
                 currentStopNameIndex
             ) ?: 0
         } else {
@@ -373,7 +385,8 @@ class StudentBusRepository(
             liveEta?.vehicleLatitude,
             liveEta?.currentLocation?.latitude,
             liveEta?.latitude,
-            liveEta?.lat
+            liveEta?.lat,
+            driverLocation?.latitude
         )
         val busLongitude = firstDouble(
             liveEta?.busLongitude,
@@ -381,7 +394,8 @@ class StudentBusRepository(
             liveEta?.vehicleLongitude,
             liveEta?.currentLocation?.longitude,
             liveEta?.longitude,
-            liveEta?.lng
+            liveEta?.lng,
+            driverLocation?.longitude
         )
         val progressIndex = firstFloat(
             liveEta?.busProgressIndex,
@@ -400,7 +414,8 @@ class StudentBusRepository(
                 busStatus?.currentSeats,
                 busStatus?.currentPassengers,
                 busStatus?.passengerCount,
-                liveEta?.currentSeats
+                liveEta?.currentSeats,
+                driverLocation?.currentSeats
             )?.let { (totalSeats - it).coerceIn(0, totalSeats) }
             ?: schedule.remainingSeats.coerceIn(0, totalSeats)
         val statusText = when {

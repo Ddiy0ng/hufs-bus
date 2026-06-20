@@ -14,6 +14,7 @@ import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.Response
 
 interface ApiService {
     @POST("/api/auth/login")
@@ -29,12 +30,8 @@ interface ApiService {
 
     @GET("/api/timetables/{timetableId}/live")
     suspend fun getLiveEta(
-        @Path("timetableId") timetableId: Long,
-        @Query("token") token: String? = null
+        @Path("timetableId") timetableId: Long
     ): JsonElement
-
-    @GET("/api/buses/{timetableId}/statuses")
-    suspend fun getBusStatuses(@Path("timetableId") timetableId: Long): JsonElement
 
     @GET("/api/buses/{timetableId}/seats")
     suspend fun getBusSeats(@Path("timetableId") timetableId: Long): JsonElement
@@ -48,20 +45,23 @@ interface ApiService {
         @Body request: BusTagRequest
     ): JsonElement
 
+    @POST("/api/buses/{timetableId}/tags")
+    suspend fun postBusTagRaw(
+        @Path("timetableId") timetableId: Long,
+        @Body request: BusTagRequest
+    ): Response<JsonElement>
+
     @POST("/api/driver/location")
     suspend fun postDriverLocation(@Body request: DriverLocationRequest): JsonElement
 
-    @GET("/api/favorites")
-    suspend fun getFavorites(): JsonElement
+    @GET("/api/driver/location/{busId}")
+    suspend fun getDriverLocation(@Path("busId") busId: Long): JsonElement
 
     @GET("/api/favorite")
     suspend fun getFavorite(
         @Query("inOutCampus") inOutCampus: String? = null,
         @Query("day") day: String? = null
     ): JsonElement
-
-    @POST("/api/favorites/{specificTimetableId}")
-    suspend fun addFavorite(@Path("specificTimetableId") specificTimetableId: Long): JsonElement
 
     @POST("/api/favorite")
     suspend fun addFavoriteLegacy(@Body request: FavoriteCreateRequest): JsonElement
@@ -74,9 +74,6 @@ interface ApiService {
         @Query("favoriteId") favoriteId: Long,
         @Query("day") day: String
     ): JsonElement
-
-    @DELETE("/api/favorites/{specificTimetableId}")
-    suspend fun deleteFavorite(@Path("specificTimetableId") specificTimetableId: Long): JsonElement
 
     @DELETE("/api/users/me")
     suspend fun withdrawUser(): JsonElement

@@ -294,7 +294,11 @@ private fun BusSchedule.withLivePassengerState(driverViewModel: DriverViewModel)
         remainingSeats = remainingSeats.coerceIn(0, FIXED_TOTAL_SEATS)
     )
     val route = driverViewModel.selectedRoute ?: return normalized
-    if (route.routeName != routeName || route.scheduledTime != departureTime) return normalized
+    val sameTimetable = route.timetableId != null && timetableId != null && route.timetableId == timetableId
+    val sameLegacyRoute = route.timetableId == null && timetableId == null &&
+        route.routeName == routeName &&
+        route.scheduledTime == departureTime
+    if (!sameTimetable && !sameLegacyRoute) return normalized
 
     val currentPassengers = driverViewModel.passengerCount.coerceIn(0, FIXED_TOTAL_SEATS)
     val liveLocation = when (driverViewModel.operationState) {

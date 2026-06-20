@@ -16,7 +16,7 @@ object RetrofitClient {
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         redactHeader("Authorization")
         level = if (BuildConfig.DEBUG) {
-            HttpLoggingInterceptor.Level.HEADERS
+            HttpLoggingInterceptor.Level.BODY
         } else {
             HttpLoggingInterceptor.Level.NONE
         }
