@@ -29,12 +29,12 @@ public class BusService {
                 .orElseThrow(() -> new CustomException(ErrorCode.BUS_NOT_FOUND));
 
         if (request.getType() == BusTagRequest.TagType.BOARD) {
-            if (bus.getCurrentSeats() <= 0) {
+            if (bus.getCurrentSeats() >= bus.getTotalSeats()) {
                 throw new CustomException(ErrorCode.SEAT_UNAVAILABLE);
             }
             bus.board();
         } else {
-            if (bus.getCurrentSeats() >= bus.getTotalSeats()) {
+            if (bus.getCurrentSeats() <= 0) {
                 throw new CustomException(ErrorCode.NO_PASSENGER);
             }
             bus.alight();
