@@ -1,5 +1,6 @@
 package hufsbus.spring.domain.timetable.dto;
 
+import hufsbus.spring.domain.bus.entity.Bus;
 import hufsbus.spring.domain.timetable.entity.BusRoute;
 import hufsbus.spring.domain.timetable.entity.BusStop;
 import hufsbus.spring.domain.timetable.entity.Timetable;
@@ -15,6 +16,7 @@ import java.util.List;
 public class TimetableResponseDto {
 
     private Long timetableId;
+    private Long busId;
     private Long routeId;
     private String inOutCampus;
     private String startStop;
@@ -22,7 +24,7 @@ public class TimetableResponseDto {
     private String departAt;
     private List<String> routeList;
 
-    public static TimetableResponseDto of(Timetable timetable, List<BusStop> busStopList) {
+    public static TimetableResponseDto of(Timetable timetable, List<BusStop> busStopList, Bus bus) {
 
         BusRoute busRoute = timetable.getBusRoute();
         List<String> route = new ArrayList<>();
@@ -32,6 +34,7 @@ public class TimetableResponseDto {
 
         TimetableResponseDto timetableResponseDto = new TimetableResponseDto();
         timetableResponseDto.timetableId = timetable.getId();
+        timetableResponseDto.busId = bus != null ? bus.getId() : null;
         timetableResponseDto.routeId = busRoute.getId();
         timetableResponseDto.inOutCampus = busRoute.getInOutCampus().getInOutCampus();
         timetableResponseDto.startStop = busRoute.getStartStop().getBusStopName();
