@@ -148,9 +148,12 @@ class StudentBusViewModel : ViewModel() {
                         busLocation = location
                         val curr = uiState.selectedRouteDetail
                         if (curr != null) {
-                            val newProgress = location.currentStopSequence
-                                ?.let { seq -> (seq - 1).toFloat().coerceIn(0f, (curr.stops.size - 1).toFloat()) }
-                                ?: curr.busProgressIndex
+                            val maxIdx = (curr.stops.size - 1).toFloat().coerceAtLeast(0f)
+                            val newProgress =
+                                repository.nearestStopProgress(lat, lng)                // 1순위: GPS → 정류장 계산
+                                    ?: location.currentStopSequence                     // 2순위: 서버 stop 순서
+                                        ?.let { seq -> (seq - 1).toFloat().coerceIn(0f, maxIdx) }
+                                    ?: curr.busProgressIndex                            // 3순위: 현재 위치 유지
                             Log.d("MapMarker", "[MapMarker] updated lat=$lat lng=$lng busProgressIndex=$newProgress")
                             uiState = uiState.copy(
                                 selectedRouteDetail = curr.copy(
@@ -242,6 +245,18 @@ data class ScheduleLoadResult(
 class StudentBusRepository(
     private val shuttleRepository: ShuttleRepository = ShuttleRepository()
 ) {
+    private var cachedStopPoints: List<RouteStopPoint> = emptyList()
+
+    fun nearestStopProgress(lat: Double, lng: Double): Float? {
+        val points = cachedStopPoints
+        val hasCoords = points.any { it.latitude != null && it.longitude != null }
+        if (!hasCoords || points.size < 2) return null
+        val progress = estimateProgressFromCoordinates(points, lat, lng) ?: return null
+        val nearestIndex = progress.toInt().coerceIn(0, points.lastIndex)
+        val stopName = points.getOrNull(nearestIndex)?.name ?: "정류장${nearestIndex + 1}"
+        Log.d("NearestStop", "[NearestStop] stopName=$stopName progress=$progress lat=$lat lng=$lng")
+        return progress
+    }
     suspend fun loadSchedules(): ScheduleLoadResult {
         val offResult = shuttleRepository.getTimetable("OUT_CAMPUS")
         val onResult = shuttleRepository.getTimetable("IN_CAMPUS")
@@ -490,6 +505,7 @@ class StudentBusRepository(
         val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop || hasGpsLocation)
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
         val stopPoints = apiStopPoints.ifEmpty { schedule.routeStops.map { RouteStopPoint(it, null, null) } }
+        if (stopPoints.any { it.latitude != null }) cachedStopPoints = stopPoints
         val stops = stopPoints.map { it.name }
         val currentStopName = firstText(busStatus?.currentStopName, driverLocation?.currentStopName, liveCurrentStopName)
         val currentStopNameIndex = currentStopName.takeIf { it.isNotBlank() }?.let { currentStop ->
