@@ -722,8 +722,10 @@ private fun StudentRouteStatusContent(
     onBackClick: () -> Unit,
     onFavoriteClick: () -> Unit
 ) {
-    val stops = routeDetail.stops
-    val busProgressIndex = routeDetail.busProgressIndex.coerceIn(0f, stops.lastIndex.toFloat())
+    val stops = routeDetail.stops.ifEmpty { schedule.routeStops }
+    val hasStops = stops.isNotEmpty()
+    val safeLastIndex = stops.lastIndex.coerceAtLeast(0)
+    val busProgressIndex = routeDetail.busProgressIndex.coerceIn(0f, safeLastIndex.toFloat())
     val isCurvedRoute = stops.size >= 7
     var selectedStopIndex by remember(schedule.id, stops) {
         mutableStateOf<Int?>(null)
@@ -832,13 +834,22 @@ private fun StudentRouteStatusContent(
                     .width(321.dp)
                     .height(213.dp)
             ) {
-                RouteProgressBar(
-                    stops = stops,
-                    busProgressIndex = busProgressIndex,
-                    isCurvedRoute = isCurvedRoute,
-                    showBusMarker = routeDetail.isRunning,
-                    onStopClick = { selectedStopIndex = it }
-                )
+                if (hasStops) {
+                    RouteProgressBar(
+                        stops = stops,
+                        busProgressIndex = busProgressIndex,
+                        isCurvedRoute = isCurvedRoute,
+                        showBusMarker = routeDetail.isRunning,
+                        onStopClick = { selectedStopIndex = it }
+                    )
+                } else {
+                    Text(
+                        text = "정류장 정보가 없습니다.",
+                        style = ShuttleRegularTextStyle,
+                        color = Color(0xFF888888),
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
             }
 
             val selectedStopInfo = selectedStopIndex?.let { index ->
@@ -940,6 +951,8 @@ private fun RouteProgressBar(
     showBusMarker: Boolean = true,
     onStopClick: (Int) -> Unit = {}
 ) {
+    if (stops.isEmpty()) return
+
     val navy = NavyBlue
     val inactive = Color(0xFFE3E7ED)
 

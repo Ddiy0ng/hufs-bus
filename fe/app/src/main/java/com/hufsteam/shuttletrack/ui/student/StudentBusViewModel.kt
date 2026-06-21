@@ -160,26 +160,56 @@ class StudentBusViewModel : ViewModel() {
                     val lat = location?.latitude
                     val lng = location?.longitude
 
-                    if (lat != null && lng != null) {
+                    if (location != null) {
                         busLocation = location
                         val curr = uiState.selectedRouteDetail
                         if (curr != null) {
                             val maxIdx = (curr.stops.size - 1).toFloat().coerceAtLeast(0f)
-                            val newProgress =
-                                repository.nearestStopProgress(lat, lng)
-                                    ?: location.currentStopSequence
-                                        ?.let { seq -> (seq - 1).toFloat().coerceIn(0f, maxIdx) }
-                                    ?: curr.busProgressIndex
-                            Log.i("MapMarker", "[MapMarker] updated lat=$lat lng=$lng busProgressIndex=$newProgress")
-                            uiState = uiState.copy(
-                                selectedRouteDetail = curr.copy(
-                                    isRunning = true,
-                                    busProgressIndex = newProgress
-                                )
+                            val coordinateProgress =
+                                if (lat != null && lng != null) repository.nearestStopProgress(lat, lng) else null
+                            val sequenceProgress = location.currentStopSequence
+                                ?.let { seq -> (seq - 1).toFloat().coerceIn(0f, maxIdx) }
+                            val nameProgress = location.currentStopName
+                                ?.takeIf { it.isNotBlank() }
+                                ?.let { currentStop ->
+                                    val normalizedCurrentStop = currentStop.replace("\n", " ").trim()
+                                    curr.stops.indexOfFirst { it.replace("\n", " ").trim() == normalizedCurrentStop }
+                                }
+                                ?.takeIf { it >= 0 }
+                                ?.toFloat()
+
+                            val newProgress = coordinateProgress
+                                ?: sequenceProgress
+                                ?: nameProgress
+                                ?: curr.busProgressIndex
+                            val hasServerMarkerPosition =
+                                coordinateProgress != null || sequenceProgress != null || nameProgress != null
+
+                            Log.i(
+                                "MapMarker",
+                                "[MapMarker] updated busId=$busId lat=$lat lng=$lng " +
+                                    "currentStopSequence=${location.currentStopSequence} " +
+                                    "currentStopName=${location.currentStopName} " +
+                                    "busProgressIndex=$newProgress source=" +
+                                    when {
+                                        coordinateProgress != null -> "gps-coordinate"
+                                        sequenceProgress != null -> "currentStopSequence"
+                                        nameProgress != null -> "currentStopName"
+                                        else -> "previous"
+                                    }
                             )
+
+                            if (hasServerMarkerPosition) {
+                                uiState = uiState.copy(
+                                    selectedRouteDetail = curr.copy(
+                                        isRunning = true,
+                                        busProgressIndex = newProgress
+                                    )
+                                )
+                            }
                         }
                     } else {
-                        Log.i("LocationPolling", "[LocationPolling] lat/lng null for busId=$busId status=${location?.status}")
+                        Log.i("LocationPolling", "[LocationPolling] empty response for busId=$busId")
                     }
 
                     // 10초마다 전체 경로 상세 정보 갱신
@@ -187,9 +217,20 @@ class StudentBusViewModel : ViewModel() {
                     if (tickCount % 10 == 0) {
                         val refreshed = repository.loadRouteDetail(schedule)
                         val loc = busLocation
+                        val hasServerMarkerPosition =
+                            loc?.latitude != null && loc?.longitude != null ||
+                                loc?.currentStopSequence != null ||
+                                !loc?.currentStopName.isNullOrBlank()
                         uiState = uiState.copy(
-                            selectedRouteDetail = if (loc?.latitude != null) refreshed.copy(isRunning = true)
-                                                  else refreshed
+                            selectedRouteDetail = if (hasServerMarkerPosition) {
+                                refreshed.copy(
+                                    isRunning = true,
+                                    busProgressIndex = uiState.selectedRouteDetail?.busProgressIndex
+                                        ?: refreshed.busProgressIndex
+                                )
+                            } else {
+                                refreshed
+                            }
                         )
                     }
                 } catch (e: CancellationException) {
@@ -510,9 +551,6 @@ class StudentBusRepository(
         val busLongitude = liveEta?.resolvedLongitude() ?: driverLocation?.longitude
         val hasGpsLocation = busLatitude != null && busLongitude != null
         val rawStatus = firstText(liveEta?.status, busStatus?.status, driverLocation?.status).uppercase()
-        val status = if (rawStatus.isBlank() && hasGpsLocation) "RUNNING" else rawStatus
-        val statusIsRunning = status == "RUNNING"
-        val statusIsDone = status == "DONE"
         val liveCurrentStopName = firstText(liveEta?.currentStopName, liveEta?.currentStop)
         val hasTrackedStop = busStatus?.currentStopSequence != null ||
             !busStatus?.currentStopName.isNullOrBlank() ||
@@ -520,6 +558,9 @@ class StudentBusRepository(
             !driverLocation?.currentStopName.isNullOrBlank() ||
             liveEta?.currentStopSequence != null ||
             liveCurrentStopName.isNotBlank()
+        val status = if (rawStatus.isBlank() && (hasGpsLocation || hasTrackedStop)) "RUNNING" else rawStatus
+        val statusIsRunning = status == "RUNNING"
+        val statusIsDone = status == "DONE"
         val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop || hasGpsLocation)
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
         val stopPoints = apiStopPoints.ifEmpty { schedule.routeStops.map { RouteStopPoint(it, null, null) } }
@@ -553,10 +594,12 @@ class StudentBusRepository(
         } else {
             0f
         }
-        if (hasLiveBus && hasGpsLocation) {
+        if (hasLiveBus) {
             Log.i(
                 "MapMarker",
                 "[MapMarker] updated lat=$busLatitude lng=$busLongitude " +
+                    "currentStopSequence=${firstInt(liveEta?.currentStopSequence, busStatus?.currentStopSequence, driverLocation?.currentStopSequence)} " +
+                    "currentStopName=$currentStopName " +
                     "progress=$progressIndex timetableId=${schedule.timetableId ?: schedule.id.toLong()} status=$status"
             )
         } else {
