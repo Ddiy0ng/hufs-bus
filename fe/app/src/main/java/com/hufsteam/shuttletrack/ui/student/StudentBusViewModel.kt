@@ -146,10 +146,18 @@ class StudentBusViewModel : ViewModel() {
 
                     if (lat != null && lng != null) {
                         busLocation = location
-                        Log.d("MapMarker", "[MapMarker] updated lat=$lat lng=$lng")
                         val curr = uiState.selectedRouteDetail
-                        if (curr != null && !curr.isRunning) {
-                            uiState = uiState.copy(selectedRouteDetail = curr.copy(isRunning = true))
+                        if (curr != null) {
+                            val newProgress = location.currentStopSequence
+                                ?.let { seq -> (seq - 1).toFloat().coerceIn(0f, (curr.stops.size - 1).toFloat()) }
+                                ?: curr.busProgressIndex
+                            Log.d("MapMarker", "[MapMarker] updated lat=$lat lng=$lng busProgressIndex=$newProgress")
+                            uiState = uiState.copy(
+                                selectedRouteDetail = curr.copy(
+                                    isRunning = true,
+                                    busProgressIndex = newProgress
+                                )
+                            )
                         }
                     }
 
