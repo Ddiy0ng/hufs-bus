@@ -941,24 +941,27 @@ private fun StopInfoPanel(
 @Composable
 private fun BusLocationMarker(
     modifier: Modifier = Modifier,
-    width: Dp = 68.dp,
-    height: Dp = 94.dp
+    width: Dp = 27.6342.dp,
+    height: Dp = 38.0513.dp
 ) {
     Canvas(modifier = modifier.size(width = width, height = height)) {
         val cx = size.width / 2f
-        val r = size.width * 0.42f
-        // White border
-        drawCircle(Color.White, radius = r + 4.dp.toPx(), center = Offset(cx, r))
-        // Red filled circle
-        drawCircle(Color(0xFFE53935), radius = r, center = Offset(cx, r))
-        // Pin tail pointing downward
+        val red = Color(0xFFD52B0A)
+        val outerRadius = size.width * 0.36f
+        val centerY = outerRadius + size.height * 0.08f
+        val tailTopY = centerY + outerRadius * 0.52f
+        val tipY = size.height * 0.94f
+        val tailHalfWidth = size.width * 0.18f
+
         val path = Path().apply {
-            moveTo(cx - r * 0.38f, r * 1.65f)
-            lineTo(cx + r * 0.38f, r * 1.65f)
-            lineTo(cx, size.height * 0.88f)
+            moveTo(cx - tailHalfWidth, tailTopY)
+            lineTo(cx + tailHalfWidth, tailTopY)
+            lineTo(cx, tipY)
             close()
         }
-        drawPath(path, Color(0xFFE53935))
+        drawPath(path, red)
+        drawCircle(red, radius = outerRadius, center = Offset(cx, centerY))
+        drawCircle(Color.White, radius = outerRadius * 0.43f, center = Offset(cx, centerY))
     }
 }
 
@@ -1031,11 +1034,13 @@ private fun StraightBusRoute(
         }
 
         if (showBusMarker) {
-            val markerX = startX + gap * clampedBus - 34.dp
+            val markerWidth = 27.6342.dp
+            val markerHeight = 38.0513.dp
+            val markerX = startX + gap * clampedBus - markerWidth / 2
             BusLocationMarker(
-                modifier = Modifier.offset(x = markerX, y = lineY - 67.dp),
-                width = 70.dp,
-                height = 96.dp
+                modifier = Modifier.offset(x = markerX, y = lineY - markerHeight * 0.94f),
+                width = markerWidth,
+                height = markerHeight
             )
         }
 
@@ -1137,13 +1142,15 @@ private fun CurvedBusRoute(
 
         if (showBusMarker) {
             val markerPosition = interpolateCurvedRoutePoint(routePoints, clampedBus, topCorner, bottomCorner, sideIndex)
+            val markerWidth = 27.6342.dp
+            val markerHeight = 38.0513.dp
             BusLocationMarker(
                 modifier = Modifier.offset(
-                    x = markerPosition.first - 35.dp,
-                    y = markerPosition.second - 69.dp
+                    x = markerPosition.first - markerWidth / 2,
+                    y = markerPosition.second - markerHeight * 0.94f
                 ),
-                width = 70.dp,
-                height = 96.dp
+                width = markerWidth,
+                height = markerHeight
             )
         }
 
