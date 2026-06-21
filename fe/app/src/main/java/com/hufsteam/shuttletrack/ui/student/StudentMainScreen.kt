@@ -914,17 +914,22 @@ private fun BusLocationMarker(
     width: Dp = 68.dp,
     height: Dp = 94.dp
 ) {
-    val context = LocalContext.current
-    val markerBitmap = remember {
-        context.assets.open("frame/BUS_MARKER.png").use { BitmapFactory.decodeStream(it) }
+    Canvas(modifier = modifier.size(width = width, height = height)) {
+        val cx = size.width / 2f
+        val r = size.width * 0.42f
+        // White border
+        drawCircle(Color.White, radius = r + 4.dp.toPx(), center = Offset(cx, r))
+        // Red filled circle
+        drawCircle(Color(0xFFE53935), radius = r, center = Offset(cx, r))
+        // Pin tail pointing downward
+        val path = Path().apply {
+            moveTo(cx - r * 0.38f, r * 1.65f)
+            lineTo(cx + r * 0.38f, r * 1.65f)
+            lineTo(cx, size.height * 0.88f)
+            close()
+        }
+        drawPath(path, Color(0xFFE53935))
     }
-
-    Image(
-        bitmap = markerBitmap.asImageBitmap(),
-        contentDescription = "버스 위치",
-        contentScale = ContentScale.Fit,
-        modifier = modifier.size(width = width, height = height)
-    )
 }
 
 @Composable
