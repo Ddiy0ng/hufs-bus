@@ -25,6 +25,7 @@ private const val OFF_CAMPUS = 1
 private const val ON_CAMPUS = 0
 private const val FIXED_TOTAL_SEATS = 45
 private const val SEAT_DISPLAY_LOG_TAG = "SeatDisplay"
+private const val LOCATION_POLL_INTERVAL_MS = 5_000L
 
 data class StopArrivalInfo(
     val stopName: String,
@@ -146,14 +147,14 @@ class StudentBusViewModel : ViewModel() {
                         busId = repository.getBusId(timetableId)
                         if (busId == null) {
                             Log.i("LocationPolling", "[LocationPolling] busId=null, waiting... timetableId=$timetableId")
-                            delay(5_000L)
+                            delay(LOCATION_POLL_INTERVAL_MS)
                             tickCount++
                             continue
                         }
                         Log.i("PollingStart", "[PollingStart] busId=$busId timetableId=$timetableId resolved")
                     }
 
-                    // 1초마다 위치 API 호출
+                    // 서버 부담을 줄이기 위해 5초마다 위치 API 호출
                     val tokenExists = !TokenStore.accessToken.isNullOrBlank()
                     Log.i("LocationApiRequest", "[LocationApiRequest] busId=$busId tokenExists=$tokenExists")
                     val location = repository.getLocation(busId!!)
@@ -212,7 +213,7 @@ class StudentBusViewModel : ViewModel() {
                         Log.i("LocationPolling", "[LocationPolling] empty response for busId=$busId")
                     }
 
-                    // 10초마다 전체 경로 상세 정보 갱신
+                    // 위치 polling과 별개로 일정 주기마다 전체 경로 상세 정보 갱신
                     tickCount++
                     if (tickCount % 10 == 0) {
                         val refreshed = repository.loadRouteDetail(schedule)
@@ -238,7 +239,7 @@ class StudentBusViewModel : ViewModel() {
                 } catch (e: Exception) {
                     Log.w("LocationPolling", "[LocationPolling] error: ${e.message}")
                 }
-                delay(1_000L)
+                delay(LOCATION_POLL_INTERVAL_MS)
             }
             Log.i("PollingStop", "[PollingStop] reason=cancelled timetableId=$timetableId")
         }
@@ -394,7 +395,7 @@ class StudentBusRepository(
     }
 
     private fun TimetableResponse.toSchedule(index: Int, defaultCampusType: String = ""): BusSchedule {
-        val stopPoints = (routeList ?: stops).toStopPoints()
+        val stopPoints = (routeList ?: stops).toStopPoints().withFallbackCoordinates()
         val routeStops = stopPoints.map { it.name }
         val routeFromStops = if (routeStops.size >= 2) {
             "${routeStops.first().cleanStopName()} → ${routeStops.last().cleanStopName()}"
@@ -563,7 +564,9 @@ class StudentBusRepository(
         val statusIsDone = status == "DONE"
         val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop || hasGpsLocation)
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
-        val stopPoints = apiStopPoints.ifEmpty { schedule.routeStops.map { RouteStopPoint(it, null, null) } }
+        val stopPoints = apiStopPoints
+            .ifEmpty { schedule.routeStops.map { RouteStopPoint(it, null, null) } }
+            .withFallbackCoordinates()
         if (stopPoints.any { it.latitude != null }) cachedStopPoints = stopPoints
         val stops = stopPoints.map { it.name }
         val currentStopName = firstText(busStatus?.currentStopName, driverLocation?.currentStopName, liveCurrentStopName)
@@ -704,6 +707,40 @@ class StudentBusRepository(
                 obj.findDouble("stopLng")
             )
         )
+    }
+
+    private fun List<RouteStopPoint>.withFallbackCoordinates(): List<RouteStopPoint> {
+        return map { point ->
+            if (point.latitude != null && point.longitude != null) {
+                val canonicalName = canonicalStopDisplayName(point.name, null)
+                Log.i(
+                    "StopCoordinateMap",
+                    "[StopCoordinateMap] source=api stop=${point.name} mapped=$canonicalName " +
+                        "lat=${point.latitude} lng=${point.longitude}"
+                )
+                point.copy(name = canonicalName)
+            } else {
+                fallbackCoordinateFor(point.name)?.let { coordinate ->
+                    val canonicalName = canonicalStopDisplayName(point.name, coordinate)
+                    Log.i(
+                        "StopCoordinateMap",
+                        "[StopCoordinateMap] source=fallback stop=${point.name} mapped=$canonicalName " +
+                            "lat=${coordinate.latitude} lng=${coordinate.longitude}"
+                    )
+                    point.copy(
+                        name = canonicalName,
+                        latitude = coordinate.latitude,
+                        longitude = coordinate.longitude
+                    )
+                } ?: run {
+                    Log.i(
+                        "StopCoordinateMap",
+                        "[StopCoordinateMap] source=missing stop=${point.name}"
+                    )
+                    point
+                }
+            }
+        }
     }
 
     private fun estimateProgressFromCoordinates(
@@ -875,6 +912,129 @@ private data class IndexedStopPoint(
     val latitude: Double,
     val longitude: Double
 )
+
+private data class StopCoordinate(
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val aliases: List<String> = emptyList()
+)
+
+private val fallbackStopCoordinates = listOf(
+    StopCoordinate("모현지석묘입구", 37.335772, 127.25411, listOf("지석묘", "지석묘 앞", "지석묘입구")),
+    StopCoordinate("기숙사사거리", 37.3361875, 127.2623125, listOf("기숙사")),
+    StopCoordinate("도서관 앞", 37.3368125, 127.2669375, listOf("도서관")),
+    StopCoordinate("인문경상관 앞", 37.339152, 127.274092, listOf("인문경상관", "인문경상관 하차지점")),
+    StopCoordinate("인문경상관 회차장 앞", 37.33955, 127.2755, listOf("인문경상관 회차장")),
+    StopCoordinate("교양관 앞", 37.339257, 127.273723, listOf("교양관")),
+    StopCoordinate("후생복지관 앞", 37.337745, 127.269356, listOf("후생복지관", "후생관")),
+    StopCoordinate("공학관 앞", 37.337074, 127.267947, listOf("공학관")),
+    StopCoordinate("백년관 앞", 37.336764, 127.265806, listOf("백년관", "글로벌캠퍼스 백년관")),
+    StopCoordinate("국제사회교육원 앞", 37.336108, 127.261757, listOf("국제사회교육원")),
+    StopCoordinate("지석묘 앞", 37.336065, 127.254137, listOf("지석묘")),
+    StopCoordinate("판교역 1번출구 판교역북편", 37.396089, 127.111397, listOf("판교역", "판교")),
+    StopCoordinate("성남역 1번출구 방면 백현마을3단지", 37.391788, 127.118136, listOf("성남역", "백현마을3단지")),
+    StopCoordinate("서현역 5번출구 방면 이매촌한신", 37.388030, 127.124703, listOf("서현역", "이매촌한신")),
+    StopCoordinate("글로벌캠퍼스", 37.336804, 127.265963, listOf("외대글로벌캠퍼스", "외대(글)", "외대")),
+    StopCoordinate("경기광주역 1번 출구 택시승차장", 37.398995, 127.251903, listOf("경기광주역")),
+    StopCoordinate("외대사거리 앞", 37.337153, 127.249848, listOf("외대사거리", "외대 사거리 정류장")),
+    StopCoordinate("서울캠퍼스", 37.597298, 127.058171, listOf("서울캠퍼스 본관")),
+    StopCoordinate("망우역 건너편 명동칼국수", 37.598427, 127.094630, listOf("망우역")),
+    StopCoordinate("도농역 동화고 정문 앞", 37.608029, 127.161697, listOf("도농역", "동화고")),
+    StopCoordinate("양정역 버스정류장", 37.605680, 127.192834, listOf("양정역")),
+    StopCoordinate("한국애니메이션고교건너편 버스정류장", 37.533998, 127.226088, listOf("한국애니메이션고교")),
+    StopCoordinate("6호선 돌곶이역 5번출구 앞", 37.611007, 127.057721, listOf("돌곶이역")),
+    StopCoordinate("6호선 석계역 4번출구", 37.614779, 127.066709, listOf("석계역")),
+    StopCoordinate("6,7호선 태릉입구역 7번출구", 37.617864, 127.076456, listOf("태릉입구역")),
+    StopCoordinate("노원역 4번 출구 맞은편 KT노원지사 앞", 37.655274, 127.063762, listOf("노원역", "KT노원지사")),
+    StopCoordinate("구리 롯데백화점 맞은편 LG베스트샵 앞", 37.601764, 127.143389, listOf("구리 롯데백화점", "구리롯데백화점")),
+    StopCoordinate("구리롯데백화점", 37.602733, 127.143840),
+    StopCoordinate("광화문 1번출구", 37.571967, 126.974879, listOf("광화문")),
+    StopCoordinate("경복궁역 6번 출구", 37.569765, 126.976548, listOf("경복궁역")),
+    StopCoordinate("1호선 신길역 1,2번 출구", 37.516728, 126.916910, listOf("신길역")),
+    StopCoordinate("삼성역 3번 출구 200m 전방 현대오토웨이 앞", 37.506360, 127.064227, listOf("삼성역", "현대오토웨이")),
+    StopCoordinate("대치동 은미아파트 강남나무병원 앞", 37.499445, 127.068009, listOf("은미아파트", "강남나무병원")),
+    StopCoordinate("수서역 1-1번 출구 서울의료원 셔틀버스정류장", 37.487440, 127.101078, listOf("수서역", "서울의료원")),
+    StopCoordinate("잠실역 10번 출구 앞", 37.514795, 127.105335, listOf("잠실역")),
+    StopCoordinate("천호역 6번 출구 7번 출구 사이", 37.538243, 127.124111, listOf("천호역")),
+    StopCoordinate("길동사거리, 강동세무서 버스정류장", 37.534757, 127.135976, listOf("길동사거리", "강동세무서")),
+    StopCoordinate("길동주민센터 정류장", 37.533995, 127.142251, listOf("길동주민센터")),
+    StopCoordinate("강동자이, 프라자아 아파트 정류장", 37.536309, 127.147884, listOf("강동자이", "프라자아")),
+    StopCoordinate("상일 초등학교", 37.545800, 127.170731, listOf("상일초등학교")),
+    StopCoordinate("황산사거리", 37.549379, 127.183925),
+    StopCoordinate("하남시청역, 장지마을", 37.540494, 127.209302, listOf("하남시청역", "장지마을")),
+    StopCoordinate("마두역 4번 출구 앞", 37.652406, 126.777487, listOf("마두역")),
+    StopCoordinate("대곡역 중앙차로 서울방면 버스정류장", 37.631463, 126.809570, listOf("대곡역")),
+    StopCoordinate("고양경찰서 앞 서울방면 버스정류장", 37.628986, 126.829293, listOf("고양경찰서")),
+    StopCoordinate("디지털미디어 시티역 버스정류장", 37.579104, 126.900550, listOf("디지털미디어시티역", "DMC역")),
+    StopCoordinate("부평역 대아지하상가 입구 큰맘할매순대국 앞", 37.490471, 126.724432, listOf("부평역")),
+    StopCoordinate("범계역 1번 출구 하나증권 앞", 37.391424, 126.952616, listOf("범계역")),
+    StopCoordinate("안산중앙역", 37.316289, 126.838909, listOf("중앙역", "안산 중앙역")),
+    StopCoordinate("중앙역 1번 출구 좌측 지하도입구 앞", 37.316342, 126.838904),
+    StopCoordinate("수원역 9번출구 100m 앞 신한은행 건너편", 37.267110, 127.002678, listOf("수원역")),
+    StopCoordinate("장안공원 정류장", 37.288257, 127.012562, listOf("장안공원")),
+    StopCoordinate("우만주공 4단지 앞 정류장", 37.292207, 127.030823, listOf("우만주공4단지")),
+    StopCoordinate("수지지역난방공사 앞 버스정류장", 37.315226, 127.088272, listOf("수지지역난방공사")),
+    StopCoordinate("수지구청", 37.321307, 127.097831),
+    StopCoordinate("풍덕천 삼거리버스 정류장 용인포은아트홀", 37.324626, 127.104781, listOf("풍덕천", "용인포은아트홀")),
+    StopCoordinate("한신아파트 버스정류장", 37.327413, 127.112706, listOf("한신아파트")),
+    StopCoordinate("동부아파트 버스정류장", 37.329704, 127.124042, listOf("동부아파트")),
+    StopCoordinate("신갈굴다리 버스 정류장", 37.270645, 127.103139, listOf("신갈굴다리")),
+    StopCoordinate("상갈파출소 앞", 37.271638, 127.108938, listOf("상갈파출소")),
+    StopCoordinate("기흥역", 37.275720, 127.115947),
+    StopCoordinate("강남대역", 37.270254, 127.125991),
+    StopCoordinate("쌍용아파트 앞", 37.258760, 127.142342, listOf("쌍용아파트")),
+    StopCoordinate("코업호텔 앞", 37.238013, 127.179560, listOf("코업호텔")),
+    StopCoordinate("명지대입구", 37.235815, 127.189974),
+    StopCoordinate("용인터미널", 37.233804, 127.209275),
+    StopCoordinate("용인중앙시장역", 37.237222, 127.208812),
+    StopCoordinate("유림동 버스정류장", 37.258633, 127.212802, listOf("유림동")),
+    StopCoordinate("학생회관 앞", 37.337455, 127.269280, listOf("학생회관"))
+)
+
+private fun fallbackCoordinateFor(stopName: String): StopCoordinate? {
+    val key = stopName.normalizedStopKey()
+    if (key.isBlank()) return null
+
+    val exact = fallbackStopCoordinates.firstOrNull { coordinate ->
+        coordinate.name.normalizedStopKey() == key ||
+            coordinate.aliases.any { it.normalizedStopKey() == key }
+    }
+    if (exact != null) return exact
+
+    return fallbackStopCoordinates.firstOrNull { coordinate ->
+        val names = listOf(coordinate.name) + coordinate.aliases
+        names.any { candidate ->
+            val candidateKey = candidate.normalizedStopKey()
+            candidateKey.length >= 2 && (key.contains(candidateKey) || candidateKey.contains(key))
+        }
+    }
+}
+
+private fun canonicalStopDisplayName(stopName: String, coordinate: StopCoordinate?): String {
+    val key = stopName.normalizedStopKey()
+    val coordinateKey = coordinate?.name?.normalizedStopKey()
+    return when {
+        key == "도서관" || coordinateKey == "도서관" -> "도서관 앞"
+        else -> stopName
+    }
+}
+
+private fun String.normalizedStopKey(): String {
+    return replace("\n", " ")
+        .replace(Regex("\\([^)]*\\)"), "")
+        .replace("하차지점", "")
+        .replace("회차장", "")
+        .replace("버스정류장", "")
+        .replace("정류장", "")
+        .replace("앞", "")
+        .replace("입구", "")
+        .replace("방면", "")
+        .replace("출구", "")
+        .replace(Regex("[^0-9A-Za-z가-힣]"), "")
+        .uppercase()
+        .trim()
+}
 
 private fun JsonObject.findString(key: String): String? {
     val element = get(key) ?: return null
