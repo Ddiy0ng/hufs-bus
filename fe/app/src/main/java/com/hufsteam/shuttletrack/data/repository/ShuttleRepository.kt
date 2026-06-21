@@ -61,6 +61,7 @@ class ShuttleRepository(
             val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
                 .toHttpUrl()
                 .newBuilder()
+                .apply { token?.let { addQueryParameter("token", it) } }
                 .build()
             val request = Request.Builder()
                 .url(url)
@@ -74,7 +75,8 @@ class ShuttleRepository(
             liveClient.newCall(request).execute().use { response ->
                 Log.i(
                     LIVE_LOG_TAG,
-                    "getLiveEta timetableId=$timetableId url=$url hasAuth=${token != null} code=${response.code}"
+                    "getLiveEta timetableId=$timetableId endpoint=/api/timetables/$timetableId/live " +
+                        "hasAuth=${token != null} hasQueryToken=${token != null} code=${response.code}"
                 )
                 if (!response.isSuccessful) {
                     val errorBody = response.body?.string().orEmpty()
@@ -108,11 +110,12 @@ class ShuttleRepository(
     }.flowOn(Dispatchers.IO)
 
     fun subscribeRawSseEvents(timetableId: Long): Flow<SseEvent> = flow {
-        val token = TokenStore.accessToken?.takeIf { it.isNotBlank() }
-        val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
-            .toHttpUrl()
-            .newBuilder()
-            .build()
+            val token = TokenStore.accessToken?.takeIf { it.isNotBlank() }
+            val url = "${RetrofitClient.BASE_URL}/api/timetables/$timetableId/live"
+                .toHttpUrl()
+                .newBuilder()
+                .apply { token?.let { addQueryParameter("token", it) } }
+                .build()
         val request = Request.Builder()
             .url(url)
             .header("Accept", "text/event-stream")
@@ -219,22 +222,33 @@ class ShuttleRepository(
     ): Result<DriverLocationResponse?> = runCatching {
         Log.i(
             DRIVER_LOCATION_LOG_TAG,
-            "postDriverLocation busId=$busId latitude=$latitude longitude=$longitude"
+            "[DriverLocationPost] busId=$busId lat=$latitude lng=$longitude result=request"
         )
-        apiService.postDriverLocation(
+        val decoded = apiService.postDriverLocation(
             DriverLocationRequest(
                 busId = busId,
                 latitude = latitude,
                 longitude = longitude
             )
         ).payloadSingleOrListFirst()?.let { gson.decode<DriverLocationResponse>(it) }
+        Log.i(
+            DRIVER_LOCATION_LOG_TAG,
+            "[DriverLocationPost] busId=$busId lat=${decoded?.latitude ?: latitude} " +
+                "lng=${decoded?.longitude ?: longitude} result=success"
+        )
+        decoded
     }
 
     suspend fun getDriverLocation(busId: Long): Result<DriverLocationResponse?> = runCatching {
         Log.i(DRIVER_LOCATION_LOG_TAG, "getDriverLocation busId=$busId endpoint=/api/driver/location/$busId")
-        apiService.getDriverLocation(busId)
+        val decoded = apiService.getDriverLocation(busId)
             .payloadSingleOrListFirst()
             ?.let { gson.decode<DriverLocationResponse>(it) }
+        Log.i(
+            DRIVER_LOCATION_LOG_TAG,
+            "[PollingLocation] busId=$busId lat=${decoded?.latitude} lng=${decoded?.longitude}"
+        )
+        decoded
     }
 
     private fun List<String>.toLiveEtaOrNull(): LiveEtaResponse? {

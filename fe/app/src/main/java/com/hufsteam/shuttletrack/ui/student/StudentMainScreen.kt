@@ -264,6 +264,7 @@ fun StudentMainScreen(
                             routeDetail = liveRouteDetail,
                             isFavorite = favoriteSchedules.any { it.schedule.id == liveSelectedSchedule.id },
                             onRefresh = {
+                                studentBusViewModel.loadRouteStatus(currentSchedule)
                                 studentBusViewModel.refreshAll(currentSchedule)
                             },
                             onBackClick = {

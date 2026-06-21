@@ -19,8 +19,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -31,9 +31,9 @@ private const val SEAT_DISPLAY_LOG_TAG = "SeatDisplay"
 
 data class StopArrivalInfo(
     val stopName: String,
-    val arrivalText: String = "약 3분 후 도착",
-    val seatText: String = "03석",
-    val detailText: String = "특정 정류장 정보 + 버스 정보"
+    val arrivalText: String = "도착 정보 없음",
+    val seatText: String = "확인 중",
+    val detailText: String = ""
 )
 
 data class RouteDetail(
@@ -219,10 +219,10 @@ class StudentBusRepository(
         val onResult = shuttleRepository.getTimetable("IN_CAMPUS")
 
         val offBaseSchedules = offResult.getOrNull()
-            ?.mapIndexed { index, dto -> dto.toSchedule(index, emptyList(), "교외") }
+            ?.mapIndexed { index, dto -> dto.toSchedule(index, "교외") }
             .orEmpty()
         val onBaseSchedules = onResult.getOrNull()
-            ?.mapIndexed { index, dto -> dto.toSchedule(index, emptyList(), "교내") }
+            ?.mapIndexed { index, dto -> dto.toSchedule(index, "교내") }
             .orEmpty()
         val offSchedules = offBaseSchedules.withSeatStatuses()
         val onSchedules = onBaseSchedules.withSeatStatuses()
@@ -271,36 +271,133 @@ class StudentBusRepository(
         return routeDetailFromApi(schedule, liveEta, busStatus, driverLocation)
     }
 
-    fun subscribeRouteDetail(schedule: BusSchedule) = flow {
+    fun subscribeRouteDetail(schedule: BusSchedule) = channelFlow {
         val timetableId = schedule.timetableId ?: schedule.id.toLong()
-        emit(loadRouteDetail(schedule))
+        send(loadRouteDetail(schedule))
         var cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
         var cachedDriverLocation = cachedBusStatus?.busId
             ?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
-        shuttleRepository.subscribeRawSseEvents(timetableId).collect { event ->
-            Log.i("SSE", "subscribeRouteDetail timetableId=$timetableId " +
-                "eventType=${event.eventType} currentSeats=${event.liveEta?.currentSeats}")
-            when (event.eventType) {
-                "seat-update" -> {
-                    val sseSeats = event.liveEta?.currentSeats
-                    if (sseSeats != null) {
-                        val patchedStatus = cachedBusStatus?.copy(currentSeats = sseSeats)
-                            ?: BusStatusResponse(currentSeats = sseSeats, status = "RUNNING",
-                                totalSeats = event.liveEta.totalSeats)
-                        emit(routeDetailFromApi(schedule, event.liveEta, patchedStatus, cachedDriverLocation))
-                    } else {
-                        cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
-                        emit(routeDetailFromApi(schedule, event.liveEta, cachedBusStatus, cachedDriverLocation))
+
+        fun currentBusId(): Long? = cachedBusStatus?.busId ?: cachedDriverLocation?.busId
+
+        fun patchStatusFromLive(liveEta: LiveEtaResponse?): BusStatusResponse? {
+            if (liveEta == null) return cachedBusStatus
+            val current = cachedBusStatus
+            val hasAnyStatusData = liveEta.busId != null ||
+                !liveEta.status.isNullOrBlank() ||
+                liveEta.currentSeats != null ||
+                liveEta.totalSeats != null ||
+                liveEta.currentStopSequence != null ||
+                !liveEta.currentStopName.isNullOrBlank()
+            if (!hasAnyStatusData) return current
+            return (current ?: BusStatusResponse()).copy(
+                busId = liveEta.busId ?: current?.busId,
+                status = liveEta.status ?: current?.status,
+                currentSeats = liveEta.currentSeats ?: current?.currentSeats,
+                totalSeats = liveEta.totalSeats ?: current?.totalSeats,
+                currentStopSequence = liveEta.currentStopSequence ?: current?.currentStopSequence,
+                currentStopName = liveEta.currentStopName ?: liveEta.currentStop ?: current?.currentStopName
+            )
+        }
+
+        fun DriverLocationResponse?.hasCoordinates(): Boolean {
+            return this != null && latitude != null && longitude != null
+        }
+
+        fun locationFromLive(liveEta: LiveEtaResponse?): DriverLocationResponse? {
+            val lat = liveEta?.resolvedLatitude()
+            val lng = liveEta?.resolvedLongitude()
+            if (lat == null || lng == null) return null
+            return DriverLocationResponse(
+                busId = liveEta.busId ?: currentBusId(),
+                latitude = lat,
+                longitude = lng,
+                status = liveEta.status ?: "RUNNING",
+                currentSeats = liveEta.currentSeats,
+                currentStopSequence = liveEta.currentStopSequence,
+                currentStopName = liveEta.currentStopName ?: liveEta.currentStop
+            )
+        }
+
+        Log.i(
+            "SSE",
+            "[SSE] timetableId=$timetableId event=subscribe busId=${currentBusId()} " +
+                "lat=${cachedDriverLocation?.latitude} lng=${cachedDriverLocation?.longitude}"
+        )
+
+        launch {
+            try {
+                shuttleRepository.subscribeRawSseEvents(timetableId).collect { event ->
+                    val eventLiveEta = event.liveEta?.normalizeLocationUpdate(event.eventType)
+                    cachedBusStatus = patchStatusFromLive(eventLiveEta)
+                    locationFromLive(eventLiveEta)?.let { cachedDriverLocation = it }
+                    Log.i(
+                        "SSE",
+                        "[SSE] timetableId=$timetableId event=${event.eventType} " +
+                            "busId=${eventLiveEta?.busId ?: currentBusId()} " +
+                            "lat=${eventLiveEta?.resolvedLatitude()} lng=${eventLiveEta?.resolvedLongitude()} " +
+                            "status=${eventLiveEta?.status}"
+                    )
+
+                    when (event.eventType) {
+                        "seat-update" -> {
+                            val sseSeats = eventLiveEta?.currentSeats
+                            if (sseSeats != null && cachedBusStatus == null) {
+                                cachedBusStatus = BusStatusResponse(
+                                    currentSeats = sseSeats,
+                                    status = "RUNNING",
+                                    totalSeats = eventLiveEta.totalSeats,
+                                    busId = eventLiveEta.busId
+                                )
+                            } else if (sseSeats == null) {
+                                cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
+                            }
+                            send(routeDetailFromApi(schedule, eventLiveEta, cachedBusStatus, cachedDriverLocation))
+                        }
+                        "location-update" -> {
+                            send(routeDetailFromApi(schedule, eventLiveEta, cachedBusStatus, cachedDriverLocation))
+                        }
+                        else -> {
+                            if (cachedBusStatus == null || currentBusId() == null) {
+                                cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
+                            }
+                            send(routeDetailFromApi(schedule, eventLiveEta, cachedBusStatus, cachedDriverLocation))
+                        }
                     }
                 }
-                "location-update" -> {
-                    emit(routeDetailFromApi(schedule, event.liveEta, cachedBusStatus, cachedDriverLocation))
-                }
-                else -> {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SSE", "[SSE] timetableId=$timetableId event=error lat=null lng=null message=${e.message}", e)
+            }
+        }
+
+        launch {
+            while (isActive) {
+                delay(5_000L)
+                var busId = currentBusId()
+                if (busId == null) {
                     cachedBusStatus = shuttleRepository.getBusStatuses(timetableId).getOrNull()
-                    cachedDriverLocation = cachedBusStatus?.busId
-                        ?.let { shuttleRepository.getDriverLocation(it).getOrNull() }
-                    emit(routeDetailFromApi(schedule, event.liveEta, cachedBusStatus, cachedDriverLocation))
+                    busId = currentBusId()
+                }
+                if (busId == null) {
+                    Log.w("PollingLocation", "[PollingLocation] busId=null lat=null lng=null timetableId=$timetableId")
+                    continue
+                }
+                val location = shuttleRepository.getDriverLocation(busId).getOrNull()
+                Log.i(
+                    "PollingLocation",
+                    "[PollingLocation] busId=$busId lat=${location?.latitude} lng=${location?.longitude}"
+                )
+                if (location.hasCoordinates()) {
+                    cachedDriverLocation = location
+                    if (cachedBusStatus?.status.isNullOrBlank()) {
+                        cachedBusStatus = (cachedBusStatus ?: BusStatusResponse()).copy(
+                            busId = busId,
+                            status = "RUNNING"
+                        )
+                    }
+                    send(routeDetailFromApi(schedule, null, cachedBusStatus, cachedDriverLocation))
                 }
             }
         }
@@ -318,30 +415,29 @@ class StudentBusRepository(
         return shuttleRepository.deleteFavorite(schedule.id.toLong()).isSuccess
     }
 
-    private fun TimetableResponse.toSchedule(index: Int, fallback: List<BusSchedule>, defaultCampusType: String = ""): BusSchedule {
+    private fun TimetableResponse.toSchedule(index: Int, defaultCampusType: String = ""): BusSchedule {
         val stopPoints = (routeList ?: stops).toStopPoints()
         val routeStops = stopPoints.map { it.name }
-        val fallbackSchedule = fallback.takeIf { it.isNotEmpty() }?.let { it[index % it.size] }
-        val fallbackRoute = if (routeStops.size >= 2) {
+        val routeFromStops = if (routeStops.size >= 2) {
             "${routeStops.first().cleanStopName()} → ${routeStops.last().cleanStopName()}"
         } else {
             val start = startStop.orEmpty()
             val end = endStop.orEmpty()
-            if (start.isNotBlank() && end.isNotBlank()) "$start → $end" else fallbackSchedule?.routeName ?: "노선"
+            if (start.isNotBlank() && end.isNotBlank()) "$start → $end" else ""
         }
 
         val resolvedTimetableId = firstLong(timetableId, specificTimetableId, id)
 
         return BusSchedule(
-            id = resolvedTimetableId?.toInt() ?: fallbackSchedule?.id ?: index + 1,
+            id = resolvedTimetableId?.toInt() ?: index + 1,
             timetableId = resolvedTimetableId,
-            routeName = firstText(routeName, route, fallbackRoute),
-            departureTime = firstText(departureTime, departAt, time, plannedDeparture, fallbackSchedule?.departureTime, "00:00"),
+            routeName = firstText(routeName, route, routeFromStops, "노선 정보 없음"),
+            departureTime = firstText(departureTime, departAt, time, plannedDeparture, "시간 정보 없음"),
             remainingSeats = FIXED_TOTAL_SEATS,
             totalSeats = FIXED_TOTAL_SEATS,
             currentLocation = firstText(currentLocation, currentStop, "운행 전"),
-            routeStops = routeStops.ifEmpty { fallbackSchedule?.routeStops.orEmpty() },
-            campusType = resolveCampusType(inOutCampus, routeName, route, fallbackRoute, defaultCampusType),
+            routeStops = routeStops,
+            campusType = resolveCampusType(inOutCampus, routeName, route, routeFromStops, defaultCampusType),
             hasSeatInfo = false,
             seatInfoSource = "pending"
         )
@@ -448,10 +544,8 @@ class StudentBusRepository(
             time = time,
             routeList = routeList
         )
-        val fallback = emptyList<BusSchedule>()
         val schedule = base.toSchedule(
             index = index,
-            fallback = fallback,
             defaultCampusType = resolveCampusType(inOutCampus, routeName, route, base.routeName, base.route)
         )
         val parsedDays = listOfNotNull(
@@ -475,7 +569,11 @@ class StudentBusRepository(
         busStatus: BusStatusResponse?,
         driverLocation: DriverLocationResponse? = null
     ): RouteDetail {
-        val status = firstText(liveEta?.status, busStatus?.status, driverLocation?.status).uppercase()
+        val busLatitude = liveEta?.resolvedLatitude() ?: driverLocation?.latitude
+        val busLongitude = liveEta?.resolvedLongitude() ?: driverLocation?.longitude
+        val hasGpsLocation = busLatitude != null && busLongitude != null
+        val rawStatus = firstText(liveEta?.status, busStatus?.status, driverLocation?.status).uppercase()
+        val status = if (rawStatus.isBlank() && hasGpsLocation) "RUNNING" else rawStatus
         val statusIsRunning = status == "RUNNING"
         val statusIsDone = status == "DONE"
         val liveCurrentStopName = firstText(liveEta?.currentStopName, liveEta?.currentStop)
@@ -485,10 +583,9 @@ class StudentBusRepository(
             !driverLocation?.currentStopName.isNullOrBlank() ||
             liveEta?.currentStopSequence != null ||
             liveCurrentStopName.isNotBlank()
-        val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop)
+        val hasLiveBus = statusIsRunning && (liveEta != null || hasTrackedStop || hasGpsLocation)
         val apiStopPoints = (liveEta?.stops ?: liveEta?.stopNames ?: liveEta?.routeList).toStopPoints()
-        val fallbackStops = schedule.routeStops
-        val stopPoints = apiStopPoints.ifEmpty { fallbackStops.map { RouteStopPoint(it, null, null) } }
+        val stopPoints = apiStopPoints.ifEmpty { schedule.routeStops.map { RouteStopPoint(it, null, null) } }
         val stops = stopPoints.map { it.name }
         val currentStopName = firstText(busStatus?.currentStopName, driverLocation?.currentStopName, liveCurrentStopName)
         val currentStopNameIndex = currentStopName.takeIf { it.isNotBlank() }?.let { currentStop ->
@@ -508,24 +605,6 @@ class StudentBusRepository(
         } else {
             0
         }
-        val busLatitude = firstDouble(
-            liveEta?.busLatitude,
-            liveEta?.busLat,
-            liveEta?.vehicleLatitude,
-            liveEta?.currentLocation?.latitude,
-            liveEta?.latitude,
-            liveEta?.lat,
-            driverLocation?.latitude
-        )
-        val busLongitude = firstDouble(
-            liveEta?.busLongitude,
-            liveEta?.busLng,
-            liveEta?.vehicleLongitude,
-            liveEta?.currentLocation?.longitude,
-            liveEta?.longitude,
-            liveEta?.lng,
-            driverLocation?.longitude
-        )
         val progressIndex = firstFloat(
             liveEta?.busProgressIndex,
             liveEta?.currentProgressIndex,
@@ -535,6 +614,19 @@ class StudentBusRepository(
             estimateProgressFromCoordinates(stopPoints, busLatitude, busLongitude) ?: currentIndex.toFloat()
         } else {
             0f
+        }
+        if (hasLiveBus && hasGpsLocation) {
+            Log.i(
+                "MapMarker",
+                "[MapMarker] updated lat=$busLatitude lng=$busLongitude " +
+                    "progress=$progressIndex timetableId=${schedule.timetableId ?: schedule.id.toLong()} status=$status"
+            )
+        } else {
+            Log.i(
+                "MapMarker",
+                "[MapMarker] hidden lat=$busLatitude lng=$busLongitude " +
+                    "timetableId=${schedule.timetableId ?: schedule.id.toLong()} status=$status hasLiveBus=$hasLiveBus"
+            )
         }
 
         val totalSeats = busStatus?.totalSeats
@@ -686,6 +778,37 @@ class StudentBusRepository(
 
     private fun firstDouble(vararg values: Double?): Double? {
         return values.firstOrNull { it != null }
+    }
+
+    private fun LiveEtaResponse.resolvedLatitude(): Double? {
+        return firstDouble(
+            busLatitude,
+            busLat,
+            vehicleLatitude,
+            currentLocation?.latitude,
+            latitude,
+            lat
+        )
+    }
+
+    private fun LiveEtaResponse.resolvedLongitude(): Double? {
+        return firstDouble(
+            busLongitude,
+            busLng,
+            vehicleLongitude,
+            currentLocation?.longitude,
+            longitude,
+            lng
+        )
+    }
+
+    private fun LiveEtaResponse.normalizeLocationUpdate(eventType: String): LiveEtaResponse {
+        val hasCoordinates = resolvedLatitude() != null && resolvedLongitude() != null
+        return if (eventType == "location-update" && status.isNullOrBlank() && hasCoordinates) {
+            copy(status = "RUNNING")
+        } else {
+            this
+        }
     }
 
     private fun String.distanceFromNowMinutes(): Int {

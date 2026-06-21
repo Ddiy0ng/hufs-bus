@@ -486,8 +486,8 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
 
             Log.i(
                 TAG_GPS,
-                "[GPS] permissionGranted=$permissionGranted hasBusId=$hasBusId " +
-                "initialLatitude=$latitude initialLongitude=$longitude isGpsTracking=$isGpsTracking"
+                "[GPS] busId=$busId lat=$latitude lng=$longitude " +
+                "permissionGranted=$permissionGranted hasBusId=$hasBusId isGpsTracking=$isGpsTracking"
             )
 
             when {
@@ -509,10 +509,10 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                         longitude = longitude
                     ).onSuccess {
                         operationMessage = "GPS 위치 전송 완료 | 00/$TOTAL_SEATS"
-                        Log.i(TAG_GPS, "timetableId=$timetableId busId=$busId lat=$latitude lng=$longitude")
+                        Log.i(TAG_GPS, "[DriverLocationPost] busId=$busId lat=$latitude lng=$longitude result=success timetableId=$timetableId")
                     }.onFailure { throwable ->
                         operationMessage = "GPS 전송 실패 | 00/$TOTAL_SEATS"
-                        Log.e(TAG_GPS, "timetableId=$timetableId GPS failed: ${throwable.message}", throwable)
+                        Log.e(TAG_GPS, "[DriverLocationPost] busId=$busId lat=$latitude lng=$longitude result=failed timetableId=$timetableId message=${throwable.message}", throwable)
                     }
                 }
                 else -> {
@@ -538,7 +538,7 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 ?: shuttleRepository.getBusStatuses(timetableId).getOrNull()?.busId
 
             if (busId == null) {
-                Log.w(TAG_GPS, "timetableId=$timetableId busId=null, skipping location update")
+                Log.w(TAG_GPS, "[GPS] busId=null lat=$latitude lng=$longitude timetableId=$timetableId skipping location update")
                 return@launch
             }
 
@@ -553,9 +553,10 @@ class DriverViewModel(application: Application) : AndroidViewModel(application) 
                 latitude = latitude,
                 longitude = longitude
             ).onSuccess {
-                Log.i(TAG_GPS, "timetableId=$timetableId busId=$busId lat=$latitude lng=$longitude")
+                Log.i(TAG_GPS, "[GPS] busId=$busId lat=$latitude lng=$longitude timetableId=$timetableId")
+                Log.i(TAG_GPS, "[DriverLocationPost] busId=$busId lat=$latitude lng=$longitude result=success timetableId=$timetableId")
             }.onFailure { throwable ->
-                Log.e(TAG_GPS, "timetableId=$timetableId GPS failed: ${throwable.message}", throwable)
+                Log.e(TAG_GPS, "[DriverLocationPost] busId=$busId lat=$latitude lng=$longitude result=failed timetableId=$timetableId message=${throwable.message}", throwable)
             }
         }
     }
