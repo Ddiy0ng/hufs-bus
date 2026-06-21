@@ -240,11 +240,12 @@ class ShuttleRepository(
     }
 
     suspend fun getDriverLocation(busId: Long): Result<DriverLocationResponse?> = runCatching {
-        Log.d(DRIVER_LOCATION_LOG_TAG, "[LocationApiRequest] busId=$busId endpoint=/api/driver/location/$busId")
+        val hasToken = !TokenStore.accessToken.isNullOrBlank()
+        Log.i(DRIVER_LOCATION_LOG_TAG, "[LocationApiRequest] busId=$busId tokenExists=$hasToken endpoint=/api/driver/location/$busId")
         val raw = apiService.getDriverLocation(busId)
-        Log.d(DRIVER_LOCATION_LOG_TAG, "[LocationApiResponse] busId=$busId raw=$raw")
+        Log.i(DRIVER_LOCATION_LOG_TAG, "[LocationApiResponse] busId=$busId raw=$raw")
         val decoded = raw.payloadSingleOrListFirst()?.let { gson.decode<DriverLocationResponse>(it) }
-        Log.d(
+        Log.i(
             DRIVER_LOCATION_LOG_TAG,
             "[LocationParsed] busId=${decoded?.busId} lat=${decoded?.latitude} lng=${decoded?.longitude} updatedAt=${decoded?.recordedAt}"
         )

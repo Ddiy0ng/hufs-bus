@@ -13,6 +13,7 @@ import com.hufsteam.shuttletrack.data.remote.dto.DriverLocationResponse
 import com.hufsteam.shuttletrack.data.remote.dto.FavoriteResponse
 import com.hufsteam.shuttletrack.data.remote.dto.LiveEtaResponse
 import com.hufsteam.shuttletrack.data.remote.dto.TimetableResponse
+import com.hufsteam.shuttletrack.data.remote.TokenStore
 import com.hufsteam.shuttletrack.data.repository.ShuttleRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -116,14 +117,27 @@ class StudentBusViewModel : ViewModel() {
     fun startRouteStatusUpdates(schedule: BusSchedule) {
         routeStatusJob?.cancel()
         val timetableId = schedule.timetableId ?: schedule.id.toLong()
+        Log.i("PollingStart", "[PollingStart] startRouteStatusUpdates called timetableId=$timetableId")
         routeStatusJob = viewModelScope.launch {
+            Log.i("PollingStart", "[PollingStart] coroutine started timetableId=$timetableId")
+
             // 초기 전체 상태 로드
-            val initial = repository.loadRouteDetail(schedule)
-            uiState = uiState.copy(selectedRouteDetail = initial)
+            val initial = try {
+                repository.loadRouteDetail(schedule).also { detail ->
+                    uiState = uiState.copy(selectedRouteDetail = detail)
+                    Log.i("PollingStart", "[PollingStart] loadRouteDetail done isRunning=${detail.isRunning} stops=${detail.stops.size}")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("PollingStart", "[PollingStart] loadRouteDetail error: ${e.message}")
+                null
+            }
 
             // busId 확보
             var busId = repository.getBusId(timetableId)
-            Log.d("PollingStart", "[PollingStart] busId=$busId timetableId=$timetableId")
+            val hasToken = !TokenStore.accessToken.isNullOrBlank()
+            Log.i("PollingStart", "[PollingStart] busId=$busId timetableId=$timetableId tokenExists=$hasToken isRunning=${initial?.isRunning}")
 
             var tickCount = 0
             while (isActive) {
@@ -131,15 +145,17 @@ class StudentBusViewModel : ViewModel() {
                     if (busId == null) {
                         busId = repository.getBusId(timetableId)
                         if (busId == null) {
-                            delay(3_000L)
+                            Log.i("LocationPolling", "[LocationPolling] busId=null, waiting... timetableId=$timetableId")
+                            delay(5_000L)
                             tickCount++
                             continue
                         }
-                        Log.d("PollingStart", "[PollingStart] busId=$busId timetableId=$timetableId resolved")
+                        Log.i("PollingStart", "[PollingStart] busId=$busId timetableId=$timetableId resolved")
                     }
 
                     // 1초마다 위치 API 호출
-                    Log.d("LocationApiRequest", "[LocationApiRequest] busId=$busId")
+                    val tokenExists = !TokenStore.accessToken.isNullOrBlank()
+                    Log.i("LocationApiRequest", "[LocationApiRequest] busId=$busId tokenExists=$tokenExists")
                     val location = repository.getLocation(busId!!)
                     val lat = location?.latitude
                     val lng = location?.longitude
@@ -150,11 +166,11 @@ class StudentBusViewModel : ViewModel() {
                         if (curr != null) {
                             val maxIdx = (curr.stops.size - 1).toFloat().coerceAtLeast(0f)
                             val newProgress =
-                                repository.nearestStopProgress(lat, lng)                // 1순위: GPS → 정류장 계산
-                                    ?: location.currentStopSequence                     // 2순위: 서버 stop 순서
+                                repository.nearestStopProgress(lat, lng)
+                                    ?: location.currentStopSequence
                                         ?.let { seq -> (seq - 1).toFloat().coerceIn(0f, maxIdx) }
-                                    ?: curr.busProgressIndex                            // 3순위: 현재 위치 유지
-                            Log.d("MapMarker", "[MapMarker] updated lat=$lat lng=$lng busProgressIndex=$newProgress")
+                                    ?: curr.busProgressIndex
+                            Log.i("MapMarker", "[MapMarker] updated lat=$lat lng=$lng busProgressIndex=$newProgress")
                             uiState = uiState.copy(
                                 selectedRouteDetail = curr.copy(
                                     isRunning = true,
@@ -162,9 +178,11 @@ class StudentBusViewModel : ViewModel() {
                                 )
                             )
                         }
+                    } else {
+                        Log.i("LocationPolling", "[LocationPolling] lat/lng null for busId=$busId status=${location?.status}")
                     }
 
-                    // 10초마다 전체 경로 상세 정보 갱신 (busProgressIndex 업데이트)
+                    // 10초마다 전체 경로 상세 정보 갱신
                     tickCount++
                     if (tickCount % 10 == 0) {
                         val refreshed = repository.loadRouteDetail(schedule)
@@ -181,12 +199,12 @@ class StudentBusViewModel : ViewModel() {
                 }
                 delay(1_000L)
             }
-            Log.d("PollingStop", "[PollingStop] reason=cancelled timetableId=$timetableId")
+            Log.i("PollingStop", "[PollingStop] reason=cancelled timetableId=$timetableId")
         }
     }
 
     fun stopRouteStatusUpdates() {
-        Log.d("PollingStop", "[PollingStop] reason=stopCalled")
+        Log.i("PollingStop", "[PollingStop] reason=stopCalled")
         routeStatusJob?.cancel()
         routeStatusJob = null
         busLocation = null
@@ -254,7 +272,7 @@ class StudentBusRepository(
         val progress = estimateProgressFromCoordinates(points, lat, lng) ?: return null
         val nearestIndex = progress.toInt().coerceIn(0, points.lastIndex)
         val stopName = points.getOrNull(nearestIndex)?.name ?: "정류장${nearestIndex + 1}"
-        Log.d("NearestStop", "[NearestStop] stopName=$stopName progress=$progress lat=$lat lng=$lng")
+        Log.i("NearestStop", "[NearestStop] stopName=$stopName progress=$progress lat=$lat lng=$lng")
         return progress
     }
     suspend fun loadSchedules(): ScheduleLoadResult {
