@@ -672,23 +672,42 @@ private fun EmptyStateMessage(message: String) {
     }
 }
 
-@Composable
-private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
-    val isRunning = schedule.runningStatus == "RUNNING"
-    val computedRemaining = (schedule.totalSeats - schedule.currentPassengerCount).coerceAtLeast(0)
-    val seatLabel = when {
-        isRunning && schedule.hasSeatInfo -> "(탑승 ${schedule.currentPassengerCount}/${schedule.totalSeats})"
-        isRunning -> "(운행 중)"
-        schedule.runningStatus == "DONE" -> "(운행 종료)"
-        schedule.totalSeats > 0 -> "(${schedule.totalSeats}석)"
-        else -> "(좌석 정보 없음)"
+private fun BusSchedule.normalizedRunningStatus(): String {
+    return runningStatus.trim().uppercase()
+}
+
+private fun BusSchedule.displayRemainingSeats(): Int {
+    val total = totalSeats.coerceAtLeast(0)
+    return when {
+        hasSeatInfo -> remainingSeats.coerceIn(0, total)
+        total > 0 -> (total - currentPassengerCount).coerceIn(0, total)
+        else -> 0
     }
-    val seatColor = when {
-        isRunning && schedule.hasSeatInfo && computedRemaining == 0 -> Color(0xFFE53935)
-        isRunning && schedule.hasSeatInfo && computedRemaining <= 5 -> Color(0xFFE65100)
-        isRunning -> NavyBlue
+}
+
+private fun BusSchedule.timetableStatusLabel(): String {
+    return when (normalizedRunningStatus()) {
+        "RUNNING" -> if (hasSeatInfo) "(${displayRemainingSeats()}석)" else "(운행 중)"
+        "DONE" -> "(운행 종료)"
+        else -> "(운행 전)"
+    }
+}
+
+private fun BusSchedule.timetableStatusColor(): Color {
+    val status = normalizedRunningStatus()
+    val remaining = displayRemainingSeats()
+    return when {
+        status == "RUNNING" && hasSeatInfo && remaining == 0 -> Color(0xFFE53935)
+        status == "RUNNING" && hasSeatInfo && remaining <= 5 -> Color(0xFFE65100)
+        status == "RUNNING" -> NavyBlue
         else -> Color(0xFF9AA0A6)
     }
+}
+
+@Composable
+private fun StudentTimetableCard(schedule: BusSchedule, onClick: () -> Unit) {
+    val seatLabel = schedule.timetableStatusLabel()
+    val seatColor = schedule.timetableStatusColor()
     Card(
         modifier = Modifier.fillMaxWidth().clickable { onClick() },
         shape    = RoundedCornerShape(14.dp),
@@ -1326,21 +1345,8 @@ private fun StudentFavoritesContent(
                                         .clickable { onScheduleClick(favorite) }
                                 ) {
                                     val favSched = favorite.schedule
-                                    val favIsRunning = favSched.runningStatus == "RUNNING"
-                                    val favComputedRemaining = (favSched.totalSeats - favSched.currentPassengerCount).coerceAtLeast(0)
-                                    val favoriteSeatLabel = when {
-                                        favIsRunning && favSched.hasSeatInfo -> "(탑승 ${favSched.currentPassengerCount}/${favSched.totalSeats})"
-                                        favIsRunning -> "(운행 중)"
-                                        favSched.runningStatus == "DONE" -> "(운행 종료)"
-                                        favSched.totalSeats > 0 -> "(${favSched.totalSeats}석)"
-                                        else -> "(좌석 정보 없음)"
-                                    }
-                                    val favoriteSeatColor = when {
-                                        favIsRunning && favSched.hasSeatInfo && favComputedRemaining == 0 -> Color(0xFFE53935)
-                                        favIsRunning && favSched.hasSeatInfo && favComputedRemaining <= 5 -> Color(0xFFE65100)
-                                        favIsRunning -> NavyBlue
-                                        else -> Color(0xFF9AA0A6)
-                                    }
+                                    val favoriteSeatLabel = favSched.timetableStatusLabel()
+                                    val favoriteSeatColor = favSched.timetableStatusColor()
                                     Text(
                                         favSched.routeName,
                                         fontSize = 13.sp,

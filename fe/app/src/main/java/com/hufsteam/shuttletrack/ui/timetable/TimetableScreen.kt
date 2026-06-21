@@ -30,7 +30,8 @@ data class TimetableEntry(
     val time: String,
     val seats: Int,
     val location: String,
-    val timetableId: Long? = null
+    val timetableId: Long? = null,
+    val status: String = "WAITING"
 )
 
 data class RouteInfo(
@@ -268,6 +269,16 @@ private fun TimetableCard(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val status = entry.status.trim().uppercase()
+    val statusLabel = when (status) {
+        "RUNNING" -> "(${entry.seats}석)"
+        "DONE" -> "(운행 종료)"
+        else -> "(운행 전)"
+    }
+    val statusColor = when (status) {
+        "RUNNING" -> Color(0xFFE53935)
+        else -> Color(0xFF9AA0A6)
+    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,10 +298,10 @@ private fun TimetableCard(
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "(${entry.seats}석)",
+                    statusLabel,
                     fontSize   = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color      = Color(0xFFE53935)
+                    color      = statusColor
                 )
             }
             Spacer(Modifier.height(4.dp))
